@@ -142,16 +142,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Carte */}
-              <div className="rounded-2xl overflow-hidden border-2 border-white border-opacity-20 shadow-2xl" style={{width: 200, height: 150}}>
-                <iframe
-                  src="https://www.openstreetmap.org/export/embed.html?bbox=-4.0372%2C35.2017%2C-3.8372%2C35.3017&layer=mapnik&marker=35.2517%2C-3.9372"
-                  width="200"
-                  height="150"
-                  style={{ border: 0, filter: 'saturate(1.2) contrast(1.1)' }}
-                  title="Carte Al Hoceima"
-                />
-              </div>
+            
             </div>
           </div>
         </div>
