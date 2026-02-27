@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ref, push, onValue, serverTimestamp, remove } from 'firebase/database'
+import { ref, push, onValue, remove } from 'firebase/database'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 
@@ -29,14 +29,29 @@ export default function BonnesPratiques() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!newPratique.titre.trim() || !newPratique.contenu.trim()) return
+
+    const now = Date.now()
+
+    // Publier la bonne pratique
     await push(ref(db, 'bonnes_pratiques'), {
       titre: newPratique.titre.trim(),
       contenu: newPratique.contenu.trim(),
       categorie: newPratique.categorie,
       auteur: userData?.nom,
       auteurRole: userData?.role,
-      timestamp: serverTimestamp()
+      timestamp: now
     })
+
+    // Publier automatiquement dans Actualités
+    await push(ref(db, 'actualites'), {
+      titre: newPratique.titre.trim(),
+      contenu: newPratique.contenu.trim(),
+      categorie: 'Bonne Pratique',
+      auteur: userData?.nom,
+      auteurRole: userData?.role,
+      timestamp: now
+    })
+
     setNewPratique({ titre: '', contenu: '', categorie: 'Relation Client' })
     setShowForm(false)
   }

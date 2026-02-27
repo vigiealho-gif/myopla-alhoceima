@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ref, onValue, set, remove } from 'firebase/database'
+import { ref, onValue, set, remove, push, get } from 'firebase/database'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 
@@ -9,6 +9,8 @@ export default function Administration() {
   const [showForm, setShowForm] = useState(false)
   const [newMembre, setNewMembre] = useState({ uid: '', nom: '', email: '', role: 'agent' })
   const [error, setError] = useState('')
+  const [syncMsg, setSyncMsg] = useState('')
+  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     const usersRef = ref(db, 'users')
@@ -46,6 +48,64 @@ export default function Administration() {
   const handleDelete = async (id) => {
     if (!window.confirm('Supprimer ce membre ?')) return
     await remove(ref(db, `users/${id}`))
+  }
+
+  const handleSync = async () => {
+    setSyncing(true)
+    setSyncMsg('')
+
+    try {
+      // Récupérer les actualités existantes pour éviter les doublons
+      const actuSnap = await get(ref(db, 'actualites'))
+      const actuData = actuSnap.val() || {}
+      const titresExistants = Object.values(actuData).map(a => a.titre)
+
+      let count = 0
+
+      // Synchroniser les consignes
+      const consignesSnap = await get(ref(db, 'consignes'))
+      const consignesData = consignesSnap.val()
+      if (consignesData) {
+        for (const c of Object.values(consignesData)) {
+          if (!titresExistants.includes(c.titre)) {
+            await push(ref(db, 'actualites'), {
+              titre: c.titre,
+              contenu: c.contenu,
+              categorie: 'Consigne',
+              auteur: c.auteur,
+              auteurRole: c.auteurRole,
+              timestamp: c.timestamp || Date.now()
+            })
+            count++
+          }
+        }
+      }
+
+      // Synchroniser les bonnes pratiques
+      const pratiquesSnap = await get(ref(db, 'bonnes_pratiques'))
+      const pratiquesData = pratiquesSnap.val()
+      if (pratiquesData) {
+        for (const p of Object.values(pratiquesData)) {
+          if (!titresExistants.includes(p.titre)) {
+            await push(ref(db, 'actualites'), {
+              titre: p.titre,
+              contenu: p.contenu,
+              categorie: 'Bonne Pratique',
+              auteur: p.auteur,
+              auteurRole: p.auteurRole,
+              timestamp: p.timestamp || Date.now()
+            })
+            count++
+          }
+        }
+      }
+
+      setSyncMsg(count > 0 ? `✅ ${count} élément(s) synchronisé(s) avec succès !` : '✅ Tout est déjà synchronisé !')
+    } catch (err) {
+      setSyncMsg('❌ Erreur lors de la synchronisation')
+    }
+
+    setSyncing(false)
   }
 
   const getRoleColor = (role) => {
@@ -133,7 +193,7 @@ export default function Administration() {
                   type="email"
                   value={newMembre.email}
                   onChange={(e) => setNewMembre({ ...newMembre, email: e.target.value })}
-                  placeholder="sara@callconnect.ma"
+                  placeholder="sara@myopla.ma"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
                   required
                 />
@@ -185,7 +245,7 @@ export default function Administration() {
       </div>
 
       {/* Liste membres */}
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden mb-6">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -222,6 +282,25 @@ export default function Administration() {
           </tbody>
         </table>
       </div>
+
+      {/* Synchronisation Actualités */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm">
+        <h2 className="font-bold text-gray-800 mb-2">🔄 Synchronisation Actualités</h2>
+        <p className="text-gray-400 text-sm mb-4">
+          Copier toutes les consignes et bonnes pratiques existantes dans la page Actualités
+        </p>
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-medium text-sm transition disabled:opacity-50"
+        >
+          {syncing ? '⏳ Synchronisation...' : '🔄 Synchroniser maintenant'}
+        </button>
+        {syncMsg && (
+          <p className="text-sm mt-3 font-medium text-green-600">{syncMsg}</p>
+        )}
+      </div>
+
     </div>
   )
 }

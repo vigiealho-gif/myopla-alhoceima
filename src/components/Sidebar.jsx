@@ -1,21 +1,49 @@
 import { useAuth } from '../context/AuthContext'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
+import { ref, onValue } from 'firebase/database'
+import { db } from '../firebase'
+import { useEffect, useState } from 'react'
 import logo from '../assets/logo.png'
 
-const menuItems = [
-  { id: 'dashboard', icon: '🏠', label: 'Tableau de bord' },
-  { id: 'presentation', icon: '🏢', label: 'Notre Entreprise' },
-  { id: 'groupe', icon: '💬', label: 'Chat Groupe' },
-  { id: 'messagerie', icon: '✉️', label: 'Messagerie Privée' },
-  { id: 'actualites', icon: '📰', label: 'Actualités' },
-  { id: 'bonnes-pratiques', icon: '⭐', label: 'Bonnes Pratiques' },
-  { id: 'consignes', icon: '📋', label: 'Consignes' },
-  { id: 'resultats', icon: '📊', label: 'Résultats' },
-]
-
 export default function Sidebar({ activePage, onNavigate }) {
-  const { userData } = useAuth()
+  const { user, userData } = useAuth()
+  const [newConsignes, setNewConsignes] = useState(0)
+  const [newPratiques, setNewPratiques] = useState(0)
+
+  useEffect(() => {
+    if (!user) return
+    const lastSeen = localStorage.getItem(`lastSeen_${user.uid}`) || 0
+
+    const consignesRef = ref(db, 'consignes')
+    const unsubC = onValue(consignesRef, (snap) => {
+      const data = snap.val()
+      if (data) {
+        const count = Object.values(data).filter(c => c.timestamp > parseInt(lastSeen)).length
+        setNewConsignes(count)
+      }
+    })
+
+    const pratiquesRef = ref(db, 'bonnes_pratiques')
+    const unsubP = onValue(pratiquesRef, (snap) => {
+      const data = snap.val()
+      if (data) {
+        const count = Object.values(data).filter(p => p.timestamp > parseInt(lastSeen)).length
+        setNewPratiques(count)
+      }
+    })
+
+    return () => { unsubC(); unsubP() }
+  }, [user])
+
+  const markAsSeen = (page) => {
+    if ((page === 'consignes' || page === 'bonnes-pratiques') && user) {
+      localStorage.setItem(`lastSeen_${user.uid}`, Date.now())
+      if (page === 'consignes') setNewConsignes(0)
+      if (page === 'bonnes-pratiques') setNewPratiques(0)
+    }
+    onNavigate(page)
+  }
 
   const handleLogout = async () => {
     await signOut(auth)
@@ -44,6 +72,23 @@ export default function Sidebar({ activePage, onNavigate }) {
     return 'bg-blue-600'
   }
 
+  const menuItemsMain = [
+    { id: 'dashboard', icon: '🏠', label: 'Tableau de bord' },
+    { id: 'presentation', icon: '🏢', label: 'Notre Entreprise' },
+  ]
+
+  const menuItemsComm = [
+    { id: 'groupe', icon: '💬', label: 'Chat Groupe' },
+    { id: 'messagerie', icon: '✉️', label: 'Messagerie Privée' },
+  ]
+
+  const menuItemsContenu = [
+    { id: 'actualites', icon: '📰', label: 'Actualités', badge: 0 },
+    { id: 'bonnes-pratiques', icon: '⭐', label: 'Bonnes Pratiques', badge: newPratiques },
+    { id: 'consignes', icon: '📋', label: 'Consignes', badge: newConsignes },
+    { id: 'resultats', icon: '📊', label: 'Résultats', badge: 0 },
+  ]
+
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-60 bg-white border-r border-gray-200 flex flex-col z-50 shadow-sm">
 
@@ -61,10 +106,10 @@ export default function Sidebar({ activePage, onNavigate }) {
         <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2">
           Principal
         </div>
-        {menuItems.slice(0, 2).map(item => (
+        {menuItemsMain.map(item => (
           <button
             key={item.id}
-            onClick={() => onNavigate(item.id)}
+            onClick={() => markAsSeen(item.id)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-all
               ${activePage === item.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
           >
@@ -76,10 +121,10 @@ export default function Sidebar({ activePage, onNavigate }) {
         <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2 mt-4">
           Communication
         </div>
-        {menuItems.slice(2, 4).map(item => (
+        {menuItemsComm.map(item => (
           <button
             key={item.id}
-            onClick={() => onNavigate(item.id)}
+            onClick={() => markAsSeen(item.id)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-all
               ${activePage === item.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
           >
@@ -91,15 +136,23 @@ export default function Sidebar({ activePage, onNavigate }) {
         <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2 mt-4">
           Contenu
         </div>
-        {menuItems.slice(4).map(item => (
+        {menuItemsContenu.map(item => (
           <button
             key={item.id}
-            onClick={() => onNavigate(item.id)}
+            onClick={() => markAsSeen(item.id)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-all
               ${activePage === item.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
           >
             <span className="text-base">{item.icon}</span>
-            {item.label}
+            <span className="flex-1 text-left">{item.label}</span>
+            {item.badge > 0 && (
+              <span className="flex items-center gap-1">
+                <span className="text-xs">🔔</span>
+                <span className="bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                  {item.badge}
+                </span>
+              </span>
+            )}
           </button>
         ))}
 
@@ -109,7 +162,7 @@ export default function Sidebar({ activePage, onNavigate }) {
               Administration
             </div>
             <button
-              onClick={() => onNavigate('administration')}
+              onClick={() => markAsSeen('administration')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-all
                 ${activePage === 'administration' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
             >

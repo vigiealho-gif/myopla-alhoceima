@@ -2,6 +2,7 @@ import { useAuth } from '../context/AuthContext'
 import { useEffect, useState } from 'react'
 import { ref, onValue } from 'firebase/database'
 import { db } from '../firebase'
+import amazighImg from '../assets/amazigh.png'
 
 export default function Dashboard() {
   const { userData } = useAuth()
@@ -69,6 +70,8 @@ export default function Dashboard() {
       case 'Info': return 'bg-blue-100 text-blue-600 border border-blue-200'
       case 'RH': return 'bg-green-100 text-green-600 border border-green-200'
       case 'Formation': return 'bg-purple-100 text-purple-600 border border-purple-200'
+      case 'Consigne': return 'bg-orange-100 text-orange-600 border border-orange-200'
+      case 'Bonne Pratique': return 'bg-yellow-100 text-yellow-600 border border-yellow-200'
       default: return 'bg-gray-100 text-gray-600'
     }
   }
@@ -97,7 +100,6 @@ export default function Dashboard() {
 
       {/* Hero Banner */}
       <div className="relative bg-gradient-to-br from-blue-900 via-blue-700 to-blue-500 overflow-hidden">
-        {/* Decorative circles */}
         <div className="absolute top-0 right-0 w-96 h-96 bg-white opacity-5 rounded-full -translate-y-1/2 translate-x-1/2"></div>
         <div className="absolute bottom-0 left-20 w-64 h-64 bg-white opacity-5 rounded-full translate-y-1/2"></div>
         <div className="absolute top-1/2 left-1/3 w-32 h-32 bg-blue-300 opacity-10 rounded-full"></div>
@@ -105,7 +107,6 @@ export default function Dashboard() {
         <div className="relative px-8 py-8">
           <div className="flex items-center justify-between">
             <div>
-              {/* Amazigh symbol */}
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center text-xl backdrop-blur-sm border border-white border-opacity-20">
                   ⵣ
@@ -117,9 +118,8 @@ export default function Dashboard() {
               <h1 className="text-3xl font-bold text-white mb-1">
                 Bonjour, {userData?.nom?.split(' ')[0]} 👋
               </h1>
-              <p className="text-blue-200 text-sm">{getRoleLabel(userData?.role)} — CallConnect</p>
+              <p className="text-blue-200 text-sm">{getRoleLabel(userData?.role)} — Myopla Al Hoceima</p>
 
-              {/* Heure */}
               <div className="mt-4 flex items-center gap-4">
                 <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-xl px-4 py-2 border border-white border-opacity-10">
                   <div className="text-white text-xl font-bold tracking-wider">
@@ -133,6 +133,15 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-4">
+              {/* Illustration Amazigh */}
+              <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl border border-white border-opacity-20 overflow-hidden">
+                <img
+                  src={amazighImg}
+                  alt="Amazigh"
+                  className="h-32 w-24 object-cover"
+                />
+              </div>
+
               {/* Météo */}
               {meteo && (
                 <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-5 text-center border border-white border-opacity-10">
@@ -141,8 +150,6 @@ export default function Dashboard() {
                   <div className="text-blue-200 text-xs mt-1">Al Hoceima</div>
                 </div>
               )}
-
-            
             </div>
           </div>
         </div>

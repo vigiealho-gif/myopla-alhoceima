@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ref, push, onValue, serverTimestamp, remove } from 'firebase/database'
+import { ref, push, onValue, remove } from 'firebase/database'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 
@@ -29,14 +29,29 @@ export default function Consignes() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!newConsigne.titre.trim() || !newConsigne.contenu.trim()) return
+
+    const now = Date.now()
+
+    // Publier la consigne
     await push(ref(db, 'consignes'), {
       titre: newConsigne.titre.trim(),
       contenu: newConsigne.contenu.trim(),
       priorite: newConsigne.priorite,
       auteur: userData?.nom,
       auteurRole: userData?.role,
-      timestamp: serverTimestamp()
+      timestamp: now
     })
+
+    // Publier automatiquement dans Actualités
+    await push(ref(db, 'actualites'), {
+      titre: newConsigne.titre.trim(),
+      contenu: newConsigne.contenu.trim(),
+      categorie: 'Consigne',
+      auteur: userData?.nom,
+      auteurRole: userData?.role,
+      timestamp: now
+    })
+
     setNewConsigne({ titre: '', contenu: '', priorite: 'Normale' })
     setShowForm(false)
   }

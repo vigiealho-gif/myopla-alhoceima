@@ -47,14 +47,16 @@ export default function Actualites() {
   }
 
   const getCategorieStyle = (cat) => {
-    switch (cat) {
-      case 'Urgent': return 'bg-red-100 text-red-600'
-      case 'Info': return 'bg-blue-100 text-blue-600'
-      case 'RH': return 'bg-green-100 text-green-600'
-      case 'Formation': return 'bg-purple-100 text-purple-600'
-      default: return 'bg-gray-100 text-gray-600'
-    }
+  switch (cat) {
+    case 'Urgent': return 'bg-red-100 text-red-600'
+    case 'Info': return 'bg-blue-100 text-blue-600'
+    case 'RH': return 'bg-green-100 text-green-600'
+    case 'Formation': return 'bg-purple-100 text-purple-600'
+    case 'Consigne': return 'bg-orange-100 text-orange-600'
+    case 'Bonne Pratique': return 'bg-yellow-100 text-yellow-600'
+    default: return 'bg-gray-100 text-gray-600'
   }
+}
 
   const formatDate = (timestamp) => {
     if (!timestamp) return ''
