@@ -89,6 +89,23 @@ export default function MessageriePrive() {
     return () => document.removeEventListener('click', handleClick)
   }, [])
 
+  // ── Ctrl+V pour coller une image ──
+  useEffect(() => {
+    const handlePaste = (e) => {
+      if (!selectedMembre) return
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile()
+          if (file) setSelectedImage(file)
+        }
+      }
+    }
+    window.addEventListener('paste', handlePaste)
+    return () => window.removeEventListener('paste', handlePaste)
+  }, [selectedMembre])
+
   const canSendMessage = (targetRole) => {
     if (userData?.role === 'directrice') return true
     if (userData?.role === 'superviseure') return true
@@ -150,10 +167,7 @@ export default function MessageriePrive() {
   const saveEdit = async (msgId) => {
     if (!editText.trim() || !selectedMembre) return
     const convId = getConvId(user.uid, selectedMembre.id)
-    await update(ref(db, `messages_prives/${convId}/${msgId}`), {
-      texte: editText.trim(),
-      modifié: true
-    })
+    await update(ref(db, `messages_prives/${convId}/${msgId}`), { texte: editText.trim(), modifié: true })
     setEditingId(null)
     setEditText('')
   }
@@ -215,6 +229,7 @@ export default function MessageriePrive() {
   return (
     <div className="flex h-screen">
 
+      {/* Liste membres */}
       <div className="w-72 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-4 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
@@ -223,9 +238,7 @@ export default function MessageriePrive() {
               <p className="text-xs text-gray-400 mt-1">Conversations privées</p>
             </div>
             {totalUnread > 0 && (
-              <span className="bg-red-500 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">
-                {totalUnread}
-              </span>
+              <span className="bg-red-500 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">{totalUnread}</span>
             )}
           </div>
         </div>
@@ -270,6 +283,7 @@ export default function MessageriePrive() {
         </div>
       </div>
 
+      {/* Zone conversation */}
       <div className="flex-1 flex flex-col">
         {!selectedMembre ? (
           <div className="flex-1 flex items-center justify-center text-gray-400">
@@ -331,9 +345,7 @@ export default function MessageriePrive() {
                             </div>
                           ) : (
                             <div className={`px-4 py-2 rounded-2xl text-sm ${
-                              msg.senderId === user.uid
-                                ? 'bg-blue-600 text-white rounded-tr-sm'
-                                : 'bg-white text-gray-800 shadow-sm rounded-tl-sm'
+                              msg.senderId === user.uid ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white text-gray-800 shadow-sm rounded-tl-sm'
                             }`}>
                               {msg.texte}
                               {msg.modifié && <span className="text-xs opacity-60 ml-1">(modifié)</span>}
@@ -348,15 +360,9 @@ export default function MessageriePrive() {
                               >⋮</button>
                               {menuId === msg.id && (
                                 <div className="absolute right-0 bottom-6 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10 min-w-28">
-                                  <button
-                                    onClick={() => startEdit(msg)}
-                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                  >✏️ Modifier</button>
+                                  <button onClick={() => startEdit(msg)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">✏️ Modifier</button>
                                   {(userData?.role === 'directrice' || userData?.role === 'superviseure') && (
-                                    <button
-                                      onClick={() => deleteMessage(msg.id)}
-                                      className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2"
-                                    >🗑️ Supprimer</button>
+                                    <button onClick={() => deleteMessage(msg.id)} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2">🗑️ Supprimer</button>
                                   )}
                                 </div>
                               )}
@@ -372,12 +378,13 @@ export default function MessageriePrive() {
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Preview image */}
             {selectedImage && (
               <div className="bg-blue-50 border-t border-blue-200 px-6 py-3 flex items-center gap-3">
                 <img src={URL.createObjectURL(selectedImage)} alt="preview" className="h-16 w-16 object-cover rounded-lg" />
                 <div className="flex-1">
-                  <div className="text-sm font-medium text-gray-800">{selectedImage.name}</div>
-                  <div className="text-xs text-gray-400">{(selectedImage.size / 1024).toFixed(1)} KB</div>
+                  <div className="text-sm font-medium text-gray-800">{selectedImage.name || 'Image collée'}</div>
+                  <div className="text-xs text-gray-400">{selectedImage.size ? (selectedImage.size / 1024).toFixed(1) + ' KB' : ''}</div>
                 </div>
                 <button onClick={() => { setSelectedImage(null); if (fileInputRef.current) fileInputRef.current.value = '' }} className="text-gray-400 hover:text-red-500 transition text-xl">×</button>
                 <button onClick={() => sendImage(selectedImage)} disabled={uploading} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-50">
@@ -395,7 +402,7 @@ export default function MessageriePrive() {
                     type="text"
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder={`Écrire à ${selectedMembre.nom}...`}
+                    placeholder={`Écrire à ${selectedMembre.nom}... (Ctrl+V pour coller une image)`}
                     className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm"
                   />
                   <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium text-sm transition disabled:opacity-50">Envoyer</button>
