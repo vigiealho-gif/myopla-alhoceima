@@ -105,7 +105,6 @@ export default function MessageriePrive() {
     return () => window.removeEventListener('paste', handlePaste)
   }, [selectedMembre])
 
-  // ── Réaction emoji ──
   const toggleReaction = async (msgId, emoji) => {
     if (!selectedMembre) return
     const convId = getConvId(user.uid, selectedMembre.id)
@@ -128,10 +127,11 @@ export default function MessageriePrive() {
       .filter(r => r.count > 0)
   }
 
+  // ✅ Agents : seulement superviseures, pas directrice
   const canSendMessage = (targetRole) => {
     if (userData?.role === 'directrice') return true
     if (userData?.role === 'superviseure') return true
-    if (userData?.role === 'agent' && targetRole !== 'agent') return true
+    if (userData?.role === 'agent' && targetRole === 'superviseure') return true
     return false
   }
 
@@ -210,11 +210,12 @@ export default function MessageriePrive() {
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   }
 
+  // ✅ Agents : voient seulement les superviseures, pas la directrice
   const membresFiltrés = membres
     .filter(m => {
       if (userData?.role === 'directrice') return true
       if (userData?.role === 'superviseure') return true
-      if (userData?.role === 'agent') return m.role !== 'agent'
+      if (userData?.role === 'agent') return m.role === 'superviseure'
       return false
     })
     .sort((a, b) => (lastMessages[b.id]?.timestamp || 0) - (lastMessages[a.id]?.timestamp || 0))
@@ -224,7 +225,6 @@ export default function MessageriePrive() {
   return (
     <div className="flex h-screen">
 
-      {/* Liste membres */}
       <div className="w-72 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-4 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
@@ -238,7 +238,9 @@ export default function MessageriePrive() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {membresFiltrés.length === 0 && <div className="text-center text-gray-400 p-6 text-sm">Aucun membre disponible</div>}
+          {membresFiltrés.length === 0 && (
+            <div className="text-center text-gray-400 p-6 text-sm">Aucun membre disponible</div>
+          )}
           {membresFiltrés.map(membre => (
             <button key={membre.id} onClick={() => setSelectedMembre(membre)}
               className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition border-b border-gray-100 ${selectedMembre?.id === membre.id ? 'bg-blue-50' : ''}`}>
@@ -255,7 +257,9 @@ export default function MessageriePrive() {
               <div className="text-left flex-1 min-w-0">
                 <div className="flex items-center justify-between">
                   <div className={`text-sm font-semibold ${unreadCounts[membre.id] > 0 ? 'text-gray-900' : 'text-gray-800'}`}>{membre.nom}</div>
-                  {lastMessages[membre.id] && <div className="text-xs text-gray-400 flex-shrink-0">{formatTime(lastMessages[membre.id]?.timestamp)}</div>}
+                  {lastMessages[membre.id] && (
+                    <div className="text-xs text-gray-400 flex-shrink-0">{formatTime(lastMessages[membre.id]?.timestamp)}</div>
+                  )}
                 </div>
                 <div className={`text-xs truncate ${unreadCounts[membre.id] > 0 ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
                   {lastMessages[membre.id]
@@ -270,7 +274,6 @@ export default function MessageriePrive() {
         </div>
       </div>
 
-      {/* Zone conversation */}
       <div className="flex-1 flex flex-col">
         {!selectedMembre ? (
           <div className="flex-1 flex items-center justify-center text-gray-400">
@@ -299,7 +302,8 @@ export default function MessageriePrive() {
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-gray-50">
               {messages.length === 0 && (
                 <div className="text-center text-gray-400 mt-20">
-                  <p>Aucun message</p><p className="text-sm">Démarrez la conversation !</p>
+                  <p>Aucun message</p>
+                  <p className="text-sm">Démarrez la conversation !</p>
                 </div>
               )}
               {messages.map(msg => (
@@ -309,10 +313,8 @@ export default function MessageriePrive() {
                   </div>
                   <div className={`max-w-xs lg:max-w-md flex flex-col ${msg.senderId === user.uid ? 'items-end' : 'items-start'}`}>
 
-                    {/* Message + bouton emoji */}
                     <div className={`relative group flex items-end gap-1 ${msg.senderId === user.uid ? 'flex-row-reverse' : ''}`}>
 
-                      {/* Bouton 😊 */}
                       <div className="relative">
                         <button
                           onClick={(e) => { e.stopPropagation(); setEmojiPickerId(emojiPickerId === msg.id ? null : msg.id); setMenuId(null) }}
@@ -384,7 +386,6 @@ export default function MessageriePrive() {
                               )}
                             </div>
 
-                            {/* ── Réactions affichées ── */}
                             {msg.reactions && getReactionSummary(msg.reactions).length > 0 && (
                               <div className={`flex flex-wrap gap-1 mt-1 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
                                 {getReactionSummary(msg.reactions).map(({ emoji, count, hasReacted }) => (
@@ -433,7 +434,9 @@ export default function MessageriePrive() {
                   <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium text-sm transition disabled:opacity-50">Envoyer</button>
                 </form>
               ) : (
-                <div className="text-center text-gray-400 text-sm py-2">🚫 Vous ne pouvez pas envoyer de messages privés à cet agent</div>
+                <div className="text-center text-gray-400 text-sm py-2">
+                  🚫 Vous n'avez pas accès à cette conversation
+                </div>
               )}
             </div>
           </>
