@@ -10,6 +10,7 @@ export default function Sidebar({ activePage, onNavigate }) {
   const { user, userData } = useAuth()
   const [newConsignes, setNewConsignes] = useState(0)
   const [newPratiques, setNewPratiques] = useState(0)
+  const [unreadMessages, setUnreadMessages] = useState(0)
 
   useEffect(() => {
     if (!user) return
@@ -36,11 +37,44 @@ export default function Sidebar({ activePage, onNavigate }) {
     return () => { unsubC(); unsubP() }
   }, [user])
 
+  // Compter tous les messages non lus dans toutes les conversations
+  useEffect(() => {
+    if (!user) return
+
+    const messagesRef = ref(db, 'messages_prives')
+    const unsubM = onValue(messagesRef, (snap) => {
+      const data = snap.val()
+      if (!data) {
+        setUnreadMessages(0)
+        return
+      }
+
+      let totalUnread = 0
+      Object.entries(data).forEach(([convId, messages]) => {
+        // Vérifier si cette conversation concerne l'utilisateur
+        if (!convId.includes(user.uid)) return
+        if (!messages) return
+
+        Object.values(messages).forEach(msg => {
+          if (msg.senderId !== user.uid && !msg.readBy?.[user.uid]) {
+            totalUnread++
+          }
+        })
+      })
+      setUnreadMessages(totalUnread)
+    })
+
+    return () => unsubM()
+  }, [user])
+
   const markAsSeen = (page) => {
     if ((page === 'consignes' || page === 'bonnes-pratiques') && user) {
       localStorage.setItem(`lastSeen_${user.uid}`, Date.now())
       if (page === 'consignes') setNewConsignes(0)
       if (page === 'bonnes-pratiques') setNewPratiques(0)
+    }
+    if (page === 'messagerie') {
+      setUnreadMessages(0)
     }
     onNavigate(page)
   }
@@ -78,8 +112,8 @@ export default function Sidebar({ activePage, onNavigate }) {
   ]
 
   const menuItemsComm = [
-    { id: 'groupe', icon: '💬', label: 'Chat Groupe' },
-    { id: 'messagerie', icon: '✉️', label: 'Messagerie Privée' },
+    { id: 'groupe', icon: '💬', label: 'Chat Groupe', badge: 0 },
+    { id: 'messagerie', icon: '✉️', label: 'Messagerie Privée', badge: unreadMessages },
   ]
 
   const menuItemsContenu = [
@@ -129,7 +163,14 @@ export default function Sidebar({ activePage, onNavigate }) {
               ${activePage === item.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
           >
             <span className="text-base">{item.icon}</span>
-            {item.label}
+            <span className="flex-1 text-left">{item.label}</span>
+            {item.badge > 0 && (
+              <span className="flex items-center gap-1">
+                <span className="bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                  {item.badge}
+                </span>
+              </span>
+            )}
           </button>
         ))}
 
