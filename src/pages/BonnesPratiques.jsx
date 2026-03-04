@@ -3,6 +3,8 @@ import { ref, push, onValue, remove, update } from 'firebase/database'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 
+const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].includes(role)
+
 export default function BonnesPratiques() {
   const { userData } = useAuth()
   const [pratiques, setPratiques] = useState([])
@@ -11,7 +13,7 @@ export default function BonnesPratiques() {
   const [editingId, setEditingId] = useState(null)
   const [editData, setEditData] = useState({ titre: '', contenu: '', categorie: 'Relation Client' })
 
-  const canPublish = userData?.role === 'directrice' || userData?.role === 'superviseure'
+  const canPublish = userData?.role === 'directrice' || isSupOrEquivalent(userData?.role)
 
   useEffect(() => {
     const pratiquesRef = ref(db, 'bonnes_pratiques')

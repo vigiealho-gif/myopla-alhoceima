@@ -29,18 +29,15 @@ export default function Administration() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-
     if (!newMembre.uid.trim() || !newMembre.nom.trim() || !newMembre.email.trim()) {
       setError('Tous les champs sont obligatoires')
       return
     }
-
     await set(ref(db, `users/${newMembre.uid.trim()}`), {
       nom: newMembre.nom.trim(),
       email: newMembre.email.trim(),
       role: newMembre.role
     })
-
     setNewMembre({ uid: '', nom: '', email: '', role: 'agent' })
     setShowForm(false)
   }
@@ -53,47 +50,34 @@ export default function Administration() {
   const handleSync = async () => {
     setSyncing(true)
     setSyncMsg('')
-
     try {
-      // Récupérer les actualités existantes pour éviter les doublons
       const actuSnap = await get(ref(db, 'actualites'))
       const actuData = actuSnap.val() || {}
       const titresExistants = Object.values(actuData).map(a => a.titre)
-
       let count = 0
 
-      // Synchroniser les consignes
       const consignesSnap = await get(ref(db, 'consignes'))
       const consignesData = consignesSnap.val()
       if (consignesData) {
         for (const c of Object.values(consignesData)) {
           if (!titresExistants.includes(c.titre)) {
             await push(ref(db, 'actualites'), {
-              titre: c.titre,
-              contenu: c.contenu,
-              categorie: 'Consigne',
-              auteur: c.auteur,
-              auteurRole: c.auteurRole,
-              timestamp: c.timestamp || Date.now()
+              titre: c.titre, contenu: c.contenu, categorie: 'Consigne',
+              auteur: c.auteur, auteurRole: c.auteurRole, timestamp: c.timestamp || Date.now()
             })
             count++
           }
         }
       }
 
-      // Synchroniser les bonnes pratiques
       const pratiquesSnap = await get(ref(db, 'bonnes_pratiques'))
       const pratiquesData = pratiquesSnap.val()
       if (pratiquesData) {
         for (const p of Object.values(pratiquesData)) {
           if (!titresExistants.includes(p.titre)) {
             await push(ref(db, 'actualites'), {
-              titre: p.titre,
-              contenu: p.contenu,
-              categorie: 'Bonne Pratique',
-              auteur: p.auteur,
-              auteurRole: p.auteurRole,
-              timestamp: p.timestamp || Date.now()
+              titre: p.titre, contenu: p.contenu, categorie: 'Bonne Pratique',
+              auteur: p.auteur, auteurRole: p.auteurRole, timestamp: p.timestamp || Date.now()
             })
             count++
           }
@@ -104,25 +88,30 @@ export default function Administration() {
     } catch (err) {
       setSyncMsg('❌ Erreur lors de la synchronisation')
     }
-
     setSyncing(false)
   }
 
   const getRoleColor = (role) => {
     if (role === 'directrice') return 'bg-amber-100 text-amber-600'
     if (role === 'superviseure') return 'bg-purple-100 text-purple-600'
+    if (role === 'vigie') return 'bg-indigo-100 text-indigo-600'
+    if (role === 'formateur') return 'bg-teal-100 text-teal-600'
     return 'bg-blue-100 text-blue-600'
   }
 
   const getRoleLabel = (role) => {
     if (role === 'directrice') return 'Directrice'
     if (role === 'superviseure') return 'Superviseure'
+    if (role === 'vigie') return 'Vigie'
+    if (role === 'formateur') return 'Formateur'
     return 'Agent'
   }
 
   const getAvatarColor = (role) => {
     if (role === 'directrice') return 'bg-amber-500'
     if (role === 'superviseure') return 'bg-purple-600'
+    if (role === 'vigie') return 'bg-indigo-500'
+    if (role === 'formateur') return 'bg-teal-500'
     return 'bg-blue-600'
   }
 
@@ -208,6 +197,8 @@ export default function Administration() {
               >
                 <option value="agent">Agent</option>
                 <option value="superviseure">Superviseure</option>
+                <option value="vigie">Vigie</option>
+                <option value="formateur">Formateur</option>
                 <option value="directrice">Directrice</option>
               </select>
             </div>
@@ -229,7 +220,7 @@ export default function Administration() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
           <div className="text-2xl font-bold text-amber-500">{membres.filter(m => m.role === 'directrice').length}</div>
           <div className="text-xs text-gray-400 mt-1">Directrice(s)</div>
@@ -237,6 +228,14 @@ export default function Administration() {
         <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
           <div className="text-2xl font-bold text-purple-600">{membres.filter(m => m.role === 'superviseure').length}</div>
           <div className="text-xs text-gray-400 mt-1">Superviseure(s)</div>
+        </div>
+        <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
+          <div className="text-2xl font-bold text-indigo-500">{membres.filter(m => m.role === 'vigie').length}</div>
+          <div className="text-xs text-gray-400 mt-1">Vigie(s)</div>
+        </div>
+        <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
+          <div className="text-2xl font-bold text-teal-500">{membres.filter(m => m.role === 'formateur').length}</div>
+          <div className="text-xs text-gray-400 mt-1">Formateur(s)</div>
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
           <div className="text-2xl font-bold text-blue-600">{membres.filter(m => m.role === 'agent').length}</div>
@@ -300,7 +299,6 @@ export default function Administration() {
           <p className="text-sm mt-3 font-medium text-green-600">{syncMsg}</p>
         )}
       </div>
-
     </div>
   )
 }

@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext'
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '✅']
 
+const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].includes(role)
+
 export default function ChatGroupe() {
   const { userData } = useAuth()
   const [messages, setMessages] = useState([])
@@ -25,12 +27,18 @@ export default function ChatGroupe() {
   const notifTimeout = useRef(null)
 
   useEffect(() => {
+    if (!userData?.nom) return
+
+    isInitialLoad.current = true
+    lastMessageCount.current = 0
+
     const messagesRef = ref(db, 'chat_groupe')
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       const data = snapshot.val()
       if (data) {
         const messagesList = Object.entries(data).map(([id, msg]) => ({ id, ...msg }))
         messagesList.sort((a, b) => a.timestamp - b.timestamp)
+
         if (!isInitialLoad.current && messagesList.length > lastMessageCount.current) {
           const newMsg = messagesList[messagesList.length - 1]
           if (newMsg.nom !== userData?.nom) {
@@ -56,6 +64,7 @@ export default function ChatGroupe() {
             }
           }
         }
+
         if (isInitialLoad.current) isInitialLoad.current = false
         lastMessageCount.current = messagesList.length
         setMessages(messagesList)
@@ -64,7 +73,11 @@ export default function ChatGroupe() {
         isInitialLoad.current = false
       }
     })
-    return () => { unsubscribe(); if (notifTimeout.current) clearTimeout(notifTimeout.current) }
+
+    return () => {
+      unsubscribe()
+      if (notifTimeout.current) clearTimeout(notifTimeout.current)
+    }
   }, [userData?.nom])
 
   useEffect(() => {
@@ -101,9 +114,7 @@ export default function ChatGroupe() {
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 50) setUnreadCount(0)
   }
 
-  // ── Réaction emoji ──
   const toggleReaction = async (msgId, emoji) => {
-    const reactionPath = `chat_groupe/${msgId}/reactions/${emoji}/${userData?.nom}`
     const msg = messages.find(m => m.id === msgId)
     const alreadyReacted = msg?.reactions?.[emoji]?.[userData?.nom]
     if (alreadyReacted) {
@@ -202,13 +213,15 @@ export default function ChatGroupe() {
 
   const getRoleColor = (role) => {
     if (role === 'directrice') return 'text-amber-600'
-    if (role === 'superviseure') return 'text-purple-600'
+    if (isSupOrEquivalent(role)) return 'text-purple-600'
     return 'text-blue-600'
   }
 
   const getAvatarColor = (role) => {
     if (role === 'directrice') return 'bg-amber-500'
-    if (role === 'superviseure') return 'bg-purple-600'
+    if (role === 'vigie') return 'bg-indigo-500'
+    if (role === 'formateur') return 'bg-teal-500'
+    if (isSupOrEquivalent(role)) return 'bg-purple-600'
     return 'bg-blue-600'
   }
 
@@ -222,7 +235,6 @@ export default function ChatGroupe() {
   return (
     <div className="flex flex-col h-screen relative">
 
-      {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-800">💬 Chat Groupe</h1>
@@ -237,7 +249,6 @@ export default function ChatGroupe() {
         )}
       </div>
 
-      {/* Notification pop-up */}
       {notification && (
         <div className="absolute top-20 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-start gap-3 cursor-pointer hover:shadow-2xl transition"
           style={{ maxWidth: '300px', animation: 'slideIn 0.3s ease' }}
@@ -261,7 +272,6 @@ export default function ChatGroupe() {
         @keyframes emojiPop { from { opacity: 0; transform: scale(0.7) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
       `}</style>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-gray-50" onScroll={handleScroll}>
         {messages.length === 0 && (
           <div className="text-center text-gray-400 mt-20">
@@ -291,10 +301,7 @@ export default function ChatGroupe() {
                   <span className={`text-xs font-medium ${getRoleColor(msg.role)}`}>{msg.role}</span>
                 </div>
 
-                {/* Message + bouton emoji au hover */}
                 <div className={`relative group flex items-end gap-1 ${isMyMessage(msg) ? 'flex-row-reverse' : ''}`}>
-
-                  {/* Bouton 😊 au hover */}
                   <div className="relative">
                     <button
                       onClick={(e) => { e.stopPropagation(); setEmojiPickerId(emojiPickerId === msg.id ? null : msg.id); setMenuId(null) }}
@@ -302,7 +309,6 @@ export default function ChatGroupe() {
                       title="Réagir"
                     >😊</button>
 
-                    {/* Picker emoji */}
                     {emojiPickerId === msg.id && (
                       <div
                         className={`absolute bottom-8 z-30 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 flex gap-1 ${isMyMessage(msg) ? 'right-0' : 'left-0'}`}
@@ -312,9 +318,7 @@ export default function ChatGroupe() {
                         {EMOJIS.map(emoji => {
                           const hasReacted = msg.reactions?.[emoji]?.[userData?.nom]
                           return (
-                            <button
-                              key={emoji}
-                              onClick={() => toggleReaction(msg.id, emoji)}
+                            <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
                               className={`text-xl hover:scale-125 transition rounded-xl p-1 ${hasReacted ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
                               title={emoji}
                             >{emoji}</button>
@@ -327,13 +331,11 @@ export default function ChatGroupe() {
                   <div className="flex flex-col">
                     {editingId === msg.id ? (
                       <div className="flex gap-2 items-center">
-                        <input
-                          type="text" value={editText}
+                        <input type="text" value={editText}
                           onChange={(e) => setEditText(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && saveEdit(msg.id)}
                           className="px-3 py-2 border border-blue-400 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
-                          autoFocus
-                        />
+                          autoFocus />
                         <button onClick={() => saveEdit(msg.id)} className="bg-blue-600 text-white px-3 py-2 rounded-xl text-xs font-medium">✓</button>
                         <button onClick={() => setEditingId(null)} className="bg-gray-200 text-gray-600 px-3 py-2 rounded-xl text-xs font-medium">✕</button>
                       </div>
@@ -353,7 +355,6 @@ export default function ChatGroupe() {
                             </div>
                           )}
 
-                          {/* Menu ⋮ modifier/supprimer */}
                           {isMyMessage(msg) && !msg.imageUrl && (
                             <div className="absolute -left-8 top-1">
                               <button
@@ -363,7 +364,7 @@ export default function ChatGroupe() {
                               {menuId === msg.id && (
                                 <div className="absolute right-0 bottom-6 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10 min-w-28">
                                   <button onClick={() => startEdit(msg)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">✏️ Modifier</button>
-                                  {(userData?.role === 'directrice' || userData?.role === 'superviseure') && (
+                                  {(userData?.role === 'directrice' || isSupOrEquivalent(userData?.role)) && (
                                     <button onClick={() => deleteMessage(msg.id)} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2">🗑️ Supprimer</button>
                                   )}
                                 </div>
@@ -372,15 +373,11 @@ export default function ChatGroupe() {
                           )}
                         </div>
 
-                        {/* ── Réactions affichées sous le message ── */}
                         {msg.reactions && getReactionSummary(msg.reactions).length > 0 && (
                           <div className={`flex flex-wrap gap-1 mt-1 ${isMyMessage(msg) ? 'justify-end' : 'justify-start'}`}>
                             {getReactionSummary(msg.reactions).map(({ emoji, count, hasReacted }) => (
-                              <button
-                                key={emoji}
-                                onClick={() => toggleReaction(msg.id, emoji)}
-                                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition ${hasReacted ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                              >
+                              <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
+                                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition ${hasReacted ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                                 <span>{emoji}</span>
                                 <span className="font-medium">{count}</span>
                               </button>
@@ -402,7 +399,6 @@ export default function ChatGroupe() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Preview image */}
       {selectedImage && (
         <div className="bg-blue-50 border-t border-blue-200 px-6 py-3 flex items-center gap-3">
           <img src={URL.createObjectURL(selectedImage)} alt="preview" className="h-16 w-16 object-cover rounded-lg" />
@@ -417,17 +413,13 @@ export default function ChatGroupe() {
         </div>
       )}
 
-      {/* Input */}
       <div className="bg-white border-t border-gray-200 px-6 py-4">
         <form onSubmit={sendMessage} className="flex gap-3">
           <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
           <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 py-3 rounded-xl transition text-lg" title="Envoyer une image">📷</button>
-          <input
-            type="text" value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
+          <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)}
             placeholder="Écrire un message... (Ctrl+V pour coller une image)"
-            className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm"
-          />
+            className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm" />
           <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium text-sm transition disabled:opacity-50">
             Envoyer
           </button>

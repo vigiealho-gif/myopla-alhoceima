@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext'
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '✅']
 
+const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].includes(role)
+
 export default function MessageriePrive() {
   const { user, userData } = useAuth()
   const [membres, setMembres] = useState([])
@@ -127,11 +129,11 @@ export default function MessageriePrive() {
       .filter(r => r.count > 0)
   }
 
-  // ✅ Agents : seulement superviseures, pas directrice
+  // ✅ Agents : seulement vigie/formateur/superviseure, pas directrice
   const canSendMessage = (targetRole) => {
     if (userData?.role === 'directrice') return true
-    if (userData?.role === 'superviseure') return true
-    if (userData?.role === 'agent' && targetRole === 'superviseure') return true
+    if (isSupOrEquivalent(userData?.role)) return true
+    if (userData?.role === 'agent' && isSupOrEquivalent(targetRole)) return true
     return false
   }
 
@@ -185,17 +187,23 @@ export default function MessageriePrive() {
 
   const getAvatarColor = (role) => {
     if (role === 'directrice') return 'bg-amber-500'
-    if (role === 'superviseure') return 'bg-purple-600'
+    if (role === 'vigie') return 'bg-indigo-500'
+    if (role === 'formateur') return 'bg-teal-500'
+    if (isSupOrEquivalent(role)) return 'bg-purple-600'
     return 'bg-blue-600'
   }
   const getRoleColor = (role) => {
     if (role === 'directrice') return 'text-amber-600'
-    if (role === 'superviseure') return 'text-purple-600'
+    if (role === 'vigie') return 'text-indigo-600'
+    if (role === 'formateur') return 'text-teal-600'
+    if (isSupOrEquivalent(role)) return 'text-purple-600'
     return 'text-blue-600'
   }
   const getRoleLabel = (role) => {
     if (role === 'directrice') return 'Directrice'
     if (role === 'superviseure') return 'Superviseure'
+    if (role === 'vigie') return 'Vigie'
+    if (role === 'formateur') return 'Formateur'
     return 'Agent'
   }
   const getInitials = (name) => {
@@ -210,12 +218,12 @@ export default function MessageriePrive() {
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   }
 
-  // ✅ Agents : voient seulement les superviseures, pas la directrice
+  // ✅ Agents : voient seulement vigie/formateur/superviseure, pas la directrice
   const membresFiltrés = membres
     .filter(m => {
       if (userData?.role === 'directrice') return true
-      if (userData?.role === 'superviseure') return true
-      if (userData?.role === 'agent') return m.role === 'superviseure'
+      if (isSupOrEquivalent(userData?.role)) return true
+      if (userData?.role === 'agent') return isSupOrEquivalent(m.role)
       return false
     })
     .sort((a, b) => (lastMessages[b.id]?.timestamp || 0) - (lastMessages[a.id]?.timestamp || 0))
@@ -377,7 +385,7 @@ export default function MessageriePrive() {
                                   {menuId === msg.id && (
                                     <div className="absolute right-0 bottom-6 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10 min-w-28">
                                       <button onClick={() => startEdit(msg)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">✏️ Modifier</button>
-                                      {(userData?.role === 'directrice' || userData?.role === 'superviseure') && (
+                                      {(userData?.role === 'directrice' || isSupOrEquivalent(userData?.role)) && (
                                         <button onClick={() => deleteMessage(msg.id)} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2">🗑️ Supprimer</button>
                                       )}
                                     </div>

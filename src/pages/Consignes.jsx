@@ -3,6 +3,8 @@ import { ref, push, onValue, remove, update } from 'firebase/database'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 
+const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].includes(role)
+
 export default function Consignes() {
   const { userData } = useAuth()
   const [consignes, setConsignes] = useState([])
@@ -11,7 +13,7 @@ export default function Consignes() {
   const [editingId, setEditingId] = useState(null)
   const [editData, setEditData] = useState({ titre: '', contenu: '', priorite: 'Normale' })
 
-  const canPublish = userData?.role === 'directrice' || userData?.role === 'superviseure'
+  const canPublish = userData?.role === 'directrice' || isSupOrEquivalent(userData?.role)
 
   useEffect(() => {
     const consignesRef = ref(db, 'consignes')
