@@ -22,10 +22,18 @@ export default function MessageriePrive() {
   const [editText, setEditText] = useState('')
   const [menuId, setMenuId] = useState(null)
   const [emojiPickerId, setEmojiPickerId] = useState(null)
+  const [notification, setNotification] = useState(null)  // ← NOUVEAU
   const messagesEndRef = useRef(null)
   const fileInputRef = useRef(null)
+  const notifTimeout = useRef(null)  // ← NOUVEAU
+  const lastMsgTimestamps = useRef({})  // ← NOUVEAU
 
   const getConvId = (uid1, uid2) => [uid1, uid2].sort().join('_')
+
+  // ── Demander permission notifications ──
+  useEffect(() => {
+    if (Notification.permission === 'default') Notification.requestPermission()
+  }, [])
 
   useEffect(() => {
     const usersRef = ref(db, 'users')
@@ -39,6 +47,7 @@ export default function MessageriePrive() {
     return () => unsubscribe()
   }, [user.uid])
 
+  // ── Écouter toutes les conversations pour badges + notifications ──
   useEffect(() => {
     if (membres.length === 0) return
     const unsubscribes = membres.map(membre => {
@@ -49,16 +58,60 @@ export default function MessageriePrive() {
         if (data) {
           const list = Object.entries(data).map(([id, msg]) => ({ id, ...msg }))
           list.sort((a, b) => a.timestamp - b.timestamp)
-          setLastMessages(prev => ({ ...prev, [membre.id]: list[list.length - 1] }))
+          const lastMsg = list[list.length - 1]
+
+          // ── Notification si nouveau message reçu ──
+          const prevTimestamp = lastMsgTimestamps.current[membre.id] || 0
+          if (
+            lastMsg &&
+            lastMsg.senderId !== user.uid &&
+            lastMsg.timestamp > prevTimestamp &&
+            prevTimestamp !== 0
+          ) {
+            // Pop-up dans l'app
+            setNotification({ ...lastMsg, senderNom: lastMsg.senderNom || membre.nom, senderRole: lastMsg.senderRole || membre.role })
+            if (notifTimeout.current) clearTimeout(notifTimeout.current)
+            notifTimeout.current = setTimeout(() => setNotification(null), 5000)
+
+            // Son
+            try {
+              const ctx = new (window.AudioContext || window.webkitAudioContext)()
+              const o = ctx.createOscillator()
+              const g = ctx.createGain()
+              o.connect(g); g.connect(ctx.destination)
+              o.frequency.value = 660
+              g.gain.setValueAtTime(0.1, ctx.currentTime)
+              g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+              o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
+            } catch (e) {}
+
+            // Notification navigateur
+            if (Notification.permission === 'granted') {
+              new Notification(`✉️ ${lastMsg.senderNom || membre.nom}`, {
+                body: lastMsg.imageUrl ? '📷 Photo' : lastMsg.texte,
+                icon: '/favicon.ico'
+              })
+            }
+          }
+
+          if (lastMsg?.timestamp) {
+            lastMsgTimestamps.current[membre.id] = lastMsg.timestamp
+          }
+
+          setLastMessages(prev => ({ ...prev, [membre.id]: lastMsg }))
           const unread = list.filter(msg => msg.senderId !== user.uid && !msg.readBy?.[user.uid]).length
           setUnreadCounts(prev => ({ ...prev, [membre.id]: unread }))
         } else {
+          lastMsgTimestamps.current[membre.id] = 0
           setLastMessages(prev => ({ ...prev, [membre.id]: null }))
           setUnreadCounts(prev => ({ ...prev, [membre.id]: 0 }))
         }
       })
     })
-    return () => unsubscribes.forEach(u => u())
+    return () => {
+      unsubscribes.forEach(u => u())
+      if (notifTimeout.current) clearTimeout(notifTimeout.current)
+    }
   }, [membres, user.uid])
 
   useEffect(() => {
@@ -129,7 +182,6 @@ export default function MessageriePrive() {
       .filter(r => r.count > 0)
   }
 
-  // ✅ Agents : seulement vigie/formateur/superviseure, pas directrice
   const canSendMessage = (targetRole) => {
     if (userData?.role === 'directrice') return true
     if (isSupOrEquivalent(userData?.role)) return true
@@ -218,7 +270,6 @@ export default function MessageriePrive() {
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   }
 
-  // ✅ Agents : voient seulement vigie/formateur/superviseure, pas la directrice
   const membresFiltrés = membres
     .filter(m => {
       if (userData?.role === 'directrice') return true
@@ -231,7 +282,38 @@ export default function MessageriePrive() {
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen relative">
+
+      <style>{`
+        @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes emojiPop { from { opacity: 0; transform: scale(0.7) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+      `}</style>
+
+      {/* ── Notification pop-up ── */}
+      {notification && (
+        <div
+          className="absolute top-4 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-start gap-3 cursor-pointer hover:shadow-2xl transition"
+          style={{ maxWidth: '300px', animation: 'slideIn 0.3s ease' }}
+          onClick={() => {
+            const membre = membres.find(m => m.id === notification.senderId)
+            if (membre) setSelectedMembre(membre)
+            setNotification(null)
+          }}
+        >
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 ${getAvatarColor(notification.senderRole)}`}>
+            {getInitials(notification.senderNom)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-bold text-gray-800 truncate">{notification.senderNom}</span>
+              <span className={`text-xs font-medium ${getRoleColor(notification.senderRole)}`}>{getRoleLabel(notification.senderRole)}</span>
+            </div>
+            <p className="text-xs text-gray-400 mb-0.5">Message privé</p>
+            <p className="text-sm text-gray-600 truncate">{notification.imageUrl ? '📷 Photo' : notification.texte}</p>
+          </div>
+          <button onClick={(e) => { e.stopPropagation(); setNotification(null) }} className="text-gray-300 hover:text-gray-500 text-lg leading-none flex-shrink-0">×</button>
+        </div>
+      )}
 
       <div className="w-72 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-4 py-4 border-b border-gray-200">
@@ -303,10 +385,6 @@ export default function MessageriePrive() {
               </div>
             </div>
 
-            <style>{`
-              @keyframes emojiPop { from { opacity: 0; transform: scale(0.7) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-            `}</style>
-
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-gray-50">
               {messages.length === 0 && (
                 <div className="text-center text-gray-400 mt-20">
@@ -322,7 +400,6 @@ export default function MessageriePrive() {
                   <div className={`max-w-xs lg:max-w-md flex flex-col ${msg.senderId === user.uid ? 'items-end' : 'items-start'}`}>
 
                     <div className={`relative group flex items-end gap-1 ${msg.senderId === user.uid ? 'flex-row-reverse' : ''}`}>
-
                       <div className="relative">
                         <button
                           onClick={(e) => { e.stopPropagation(); setEmojiPickerId(emojiPickerId === msg.id ? null : msg.id); setMenuId(null) }}
