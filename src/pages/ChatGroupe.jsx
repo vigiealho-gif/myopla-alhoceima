@@ -8,7 +8,6 @@ import { useNotification } from '../hooks/useNotification'
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '✅']
 const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].includes(role)
 
-// ✅ Rendu du texte avec @mentions surlignées en bleu
 function MessageText({ texte }) {
   if (!texte) return null
   const parts = texte.split(/(@\w[\w\s]*)/g)
@@ -41,7 +40,9 @@ export default function ChatGroupe() {
   const [notification, setNotification] = useState(null)
   const [unreadCount, setUnreadCount] = useState(0)
 
-  // ✅ États pour les mentions
+  // ✅ Popup réactions : { msgId, emoji } ou null
+  const [reactionPopup, setReactionPopup] = useState(null)
+
   const [mentionQuery, setMentionQuery] = useState('')
   const [showMentions, setShowMentions] = useState(false)
   const [mentionSuggestions, setMentionSuggestions] = useState([])
@@ -54,15 +55,11 @@ export default function ChatGroupe() {
   const lastMessageCount = useRef(0)
   const notifTimeout = useRef(null)
 
-  // Charger les membres pour les suggestions @
   useEffect(() => {
     const usersRef = ref(db, 'users')
     onValue(usersRef, (snap) => {
       const data = snap.val()
-      if (data) {
-        const list = Object.entries(data).map(([id, u]) => ({ id, ...u }))
-        setMembres(list)
-      }
+      if (data) setMembres(Object.entries(data).map(([id, u]) => ({ id, ...u })))
     })
   }, [])
 
@@ -88,8 +85,7 @@ export default function ChatGroupe() {
 
             try {
               const ctx = new (window.AudioContext || window.webkitAudioContext)()
-              const o = ctx.createOscillator()
-              const g = ctx.createGain()
+              const o = ctx.createOscillator(); const g = ctx.createGain()
               o.connect(g); g.connect(ctx.destination)
               o.frequency.value = 880
               g.gain.setValueAtTime(0.1, ctx.currentTime)
@@ -97,7 +93,6 @@ export default function ChatGroupe() {
               o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
             } catch (e) {}
 
-            // ✅ Notification spéciale si mentionné
             if (newMsg.texte?.includes(`@${userData?.nom}`)) {
               sendNotification({
                 title: `🔔 ${newMsg.nom} vous a mentionné`,
@@ -118,10 +113,7 @@ export default function ChatGroupe() {
       }
     })
 
-    return () => {
-      unsubscribe()
-      if (notifTimeout.current) clearTimeout(notifTimeout.current)
-    }
+    return () => { unsubscribe(); if (notifTimeout.current) clearTimeout(notifTimeout.current) }
   }, [userData?.nom])
 
   useEffect(() => {
@@ -133,7 +125,12 @@ export default function ChatGroupe() {
   }, [messages])
 
   useEffect(() => {
-    const handleClick = () => { setMenuId(null); setEmojiPickerId(null); setShowMentions(false) }
+    const handleClick = () => {
+      setMenuId(null)
+      setEmojiPickerId(null)
+      setShowMentions(false)
+      setReactionPopup(null)
+    }
     document.addEventListener('click', handleClick)
     return () => document.removeEventListener('click', handleClick)
   }, [])
@@ -158,25 +155,21 @@ export default function ChatGroupe() {
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 50) setUnreadCount(0)
   }
 
-  // ✅ Détecter @ dans l'input et afficher les suggestions
   const handleInputChange = (e) => {
     const val = e.target.value
     const pos = e.target.selectionStart
     setNewMessage(val)
     setCursorPos(pos)
 
-    // Chercher le dernier @ avant le curseur
     const textBeforeCursor = val.slice(0, pos)
     const atIndex = textBeforeCursor.lastIndexOf('@')
 
     if (atIndex !== -1) {
       const query = textBeforeCursor.slice(atIndex + 1)
-      // Pas d'espace dans la query → on est en train de taper un nom
       if (!query.includes(' ') || query.length === 0) {
         setMentionQuery(query)
         const filtered = membres.filter(m =>
-          m.id !== user.uid &&
-          m.nom.toLowerCase().includes(query.toLowerCase())
+          m.id !== user.uid && m.nom.toLowerCase().includes(query.toLowerCase())
         )
         setMentionSuggestions(filtered)
         setShowMentions(filtered.length > 0)
@@ -186,7 +179,6 @@ export default function ChatGroupe() {
     setShowMentions(false)
   }
 
-  // ✅ Insérer la mention dans le message
   const insertMention = (membre) => {
     const textBeforeCursor = newMessage.slice(0, cursorPos)
     const atIndex = textBeforeCursor.lastIndexOf('@')
@@ -195,7 +187,6 @@ export default function ChatGroupe() {
     const newText = `${before}@${membre.nom} ${after}`
     setNewMessage(newText)
     setShowMentions(false)
-    // Remettre le focus sur l'input
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.focus()
@@ -222,7 +213,9 @@ export default function ChatGroupe() {
       .map(([emoji, users]) => ({
         emoji,
         count: Object.values(users).filter(Boolean).length,
-        hasReacted: !!users[userData?.nom]
+        hasReacted: !!users[userData?.nom],
+        // ✅ Liste des noms qui ont réagi
+        names: Object.entries(users).filter(([, v]) => v).map(([name]) => name)
       }))
       .filter(r => r.count > 0)
   }
@@ -331,8 +324,6 @@ export default function ChatGroupe() {
   }
 
   const isMyMessage = (msg) => msg.nom === userData?.nom
-
-  // ✅ Vérifier si le message me mentionne
   const mentionsMe = (msg) => msg.texte?.includes(`@${userData?.nom}`)
 
   return (
@@ -352,7 +343,6 @@ export default function ChatGroupe() {
         )}
       </div>
 
-      {/* Notification pop-up */}
       {notification && (
         <div className="absolute top-20 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-start gap-3 cursor-pointer hover:shadow-2xl transition"
           style={{ maxWidth: '300px', animation: 'slideIn 0.3s ease' }}
@@ -375,9 +365,9 @@ export default function ChatGroupe() {
         @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
         @keyframes emojiPop { from { opacity: 0; transform: scale(0.7) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
         @keyframes mentionPop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes reactionPop { from { opacity: 0; transform: scale(0.9) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
       `}</style>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-gray-50" onScroll={handleScroll}>
         {messages.length === 0 && (
           <div className="text-center text-gray-400 mt-20">
@@ -409,7 +399,7 @@ export default function ChatGroupe() {
                 <div className={`relative group flex items-end gap-1 ${isMyMessage(msg) ? 'flex-row-reverse' : ''}`}>
                   <div className="relative">
                     <button
-                      onClick={(e) => { e.stopPropagation(); setEmojiPickerId(emojiPickerId === msg.id ? null : msg.id); setMenuId(null) }}
+                      onClick={(e) => { e.stopPropagation(); setEmojiPickerId(emojiPickerId === msg.id ? null : msg.id); setMenuId(null); setReactionPopup(null) }}
                       className="opacity-0 group-hover:opacity-100 transition text-lg mb-1 hover:scale-110"
                     >😊</button>
 
@@ -453,7 +443,6 @@ export default function ChatGroupe() {
                                 onClick={() => window.open(msg.imageUrl, '_blank')} />
                             </div>
                           ) : (
-                            // ✅ Bulle avec fond jaune si je suis mentionné
                             <div className={`px-4 py-2 rounded-2xl text-sm ${
                               mentionsMe(msg)
                                 ? 'bg-yellow-50 border border-yellow-300 text-gray-800 rounded-tl-sm'
@@ -461,7 +450,6 @@ export default function ChatGroupe() {
                                   ? 'bg-blue-600 text-white rounded-tr-sm'
                                   : 'bg-white text-gray-800 shadow-sm rounded-tl-sm'
                             }`}>
-                              {/* ✅ Rendu avec mentions surlignées */}
                               <MessageText texte={msg.texte} />
                               {msg.modifié && <span className="text-xs opacity-60 ml-1">(modifié)</span>}
                             </div>
@@ -485,14 +473,46 @@ export default function ChatGroupe() {
                           )}
                         </div>
 
+                        {/* ✅ Réactions avec popup noms au clic */}
                         {msg.reactions && getReactionSummary(msg.reactions).length > 0 && (
                           <div className={`flex flex-wrap gap-1 mt-1 ${isMyMessage(msg) ? 'justify-end' : 'justify-start'}`}>
-                            {getReactionSummary(msg.reactions).map(({ emoji, count, hasReacted }) => (
-                              <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
-                                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition ${hasReacted ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                                <span>{emoji}</span>
-                                <span className="font-medium">{count}</span>
-                              </button>
+                            {getReactionSummary(msg.reactions).map(({ emoji, count, hasReacted, names }) => (
+                              <div key={emoji} className="relative">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleReaction(msg.id, emoji)
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.stopPropagation()
+                                    setReactionPopup({ msgId: msg.id, emoji, names })
+                                  }}
+                                  onMouseLeave={() => setReactionPopup(null)}
+                                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition ${hasReacted ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                                >
+                                  <span>{emoji}</span>
+                                  <span className="font-medium">{count}</span>
+                                </button>
+
+                                {/* ✅ Popup liste des noms */}
+                                {reactionPopup?.msgId === msg.id && reactionPopup?.emoji === emoji && (
+                                  <div
+                                    className={`absolute bottom-full mb-2 z-50 bg-gray-900 text-white rounded-xl shadow-xl px-3 py-2 min-w-max ${isMyMessage(msg) ? 'right-0' : 'left-0'}`}
+                                    style={{ animation: 'reactionPop 0.15s ease' }}
+                                  >
+                                    <div className="text-base mb-1 text-center">{emoji}</div>
+                                    <div className="space-y-0.5">
+                                      {names.map((name, i) => (
+                                        <div key={i} className="text-xs text-gray-200 whitespace-nowrap">
+                                          {name === userData?.nom ? '✦ Vous' : name}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {/* Petite flèche */}
+                                    <div className={`absolute top-full ${isMyMessage(msg) ? 'right-3' : 'left-3'} w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900`}></div>
+                                  </div>
+                                )}
+                              </div>
                             ))}
                           </div>
                         )}
@@ -511,7 +531,6 @@ export default function ChatGroupe() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Preview image */}
       {selectedImage && (
         <div className="bg-blue-50 border-t border-blue-200 px-6 py-3 flex items-center gap-3">
           <img src={URL.createObjectURL(selectedImage)} alt="preview" className="h-16 w-16 object-cover rounded-lg" />
@@ -526,10 +545,7 @@ export default function ChatGroupe() {
         </div>
       )}
 
-      {/* Zone de saisie */}
       <div className="bg-white border-t border-gray-200 px-6 py-4 relative">
-
-        {/* ✅ Popup suggestions @mentions */}
         {showMentions && (
           <div
             className="absolute bottom-full left-6 mb-2 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 min-w-48"
@@ -540,11 +556,8 @@ export default function ChatGroupe() {
               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Mentionner</span>
             </div>
             {mentionSuggestions.map(membre => (
-              <button
-                key={membre.id}
-                onClick={() => insertMention(membre)}
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 transition text-left"
-              >
+              <button key={membre.id} onClick={() => insertMention(membre)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 transition text-left">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${
                   membre.role === 'directrice' ? 'bg-amber-500' :
                   membre.role === 'superviseure' ? 'bg-purple-600' :
@@ -571,9 +584,7 @@ export default function ChatGroupe() {
             value={newMessage}
             onChange={handleInputChange}
             onKeyDown={(e) => {
-              // Fermer les suggestions avec Echap
               if (e.key === 'Escape') setShowMentions(false)
-              // Sélectionner le premier avec Entrée si suggestions ouvertes
               if (e.key === 'Enter' && showMentions && mentionSuggestions.length > 0) {
                 e.preventDefault()
                 insertMention(mentionSuggestions[0])
