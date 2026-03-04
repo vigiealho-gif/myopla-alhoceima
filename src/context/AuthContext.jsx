@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
-import { ref, get } from 'firebase/database'
+import { ref, get, onValue, set, onDisconnect, serverTimestamp } from 'firebase/database'
 import { auth, db } from '../firebase'
 
 const AuthContext = createContext()
@@ -25,6 +25,21 @@ export function AuthProvider({ children }) {
         } catch (error) {
           console.error('Erreur:', error)
         }
+
+        // ✅ Marquer l'utilisateur comme EN LIGNE
+        const presenceRef = ref(db, `presence/${firebaseUser.uid}`)
+        await set(presenceRef, {
+          online: true,
+          lastSeen: serverTimestamp()
+        })
+
+        // ✅ Quand l'utilisateur se déconnecte (ferme l'onglet, perd internet...)
+        // Firebase met automatiquement online: false
+        onDisconnect(presenceRef).set({
+          online: false,
+          lastSeen: serverTimestamp()
+        })
+
       } else {
         setUser(null)
         setUserData(null)

@@ -4,6 +4,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { db, storage } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../hooks/useNotification'
+import { usePresence } from '../hooks/usePresence'
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '✅']
 
@@ -12,6 +13,7 @@ const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].inclu
 export default function MessageriePrive() {
   const { user, userData } = useAuth()
   const { requestPermission, sendNotification } = useNotification()
+  const { isOnline } = usePresence()
 
   const [membres, setMembres] = useState([])
   const [selectedMembre, setSelectedMembre] = useState(null)
@@ -33,7 +35,6 @@ export default function MessageriePrive() {
 
   const getConvId = (uid1, uid2) => [uid1, uid2].sort().join('_')
 
-  // ✅ Demander la permission dès le montage
   useEffect(() => {
     requestPermission()
   }, [])
@@ -50,7 +51,6 @@ export default function MessageriePrive() {
     return () => unsubscribe()
   }, [user.uid])
 
-  // ✅ Écouter toutes les conversations — notifications navigateur natives
   useEffect(() => {
     if (membres.length === 0 || !user.uid) return
 
@@ -69,8 +69,6 @@ export default function MessageriePrive() {
           if (!isFirst && lastMsg && lastMsg.senderId !== user.uid && lastMsg.timestamp) {
             const prevTimestamp = lastMsgTimestamps.current[membre.id] || 0
             if (lastMsg.timestamp > prevTimestamp) {
-
-              // ── Notification pop-up dans l'app ──
               setNotification({
                 ...lastMsg,
                 senderNom: lastMsg.senderNom || membre.nom,
@@ -79,7 +77,6 @@ export default function MessageriePrive() {
               if (notifTimeout.current) clearTimeout(notifTimeout.current)
               notifTimeout.current = setTimeout(() => setNotification(null), 5000)
 
-              // ── Son ──
               try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)()
                 const o = ctx.createOscillator()
@@ -91,8 +88,6 @@ export default function MessageriePrive() {
                 o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
               } catch (e) {}
 
-              // ✅ Notification navigateur native via Service Worker
-              // Fonctionne même si l'onglet est en arrière-plan, minimisé ou sur un autre onglet
               sendNotification({
                 title: `✉️ Message privé de ${lastMsg.senderNom || membre.nom}`,
                 body: lastMsg.imageUrl ? '📷 Photo' : lastMsg.texte,
@@ -102,10 +97,7 @@ export default function MessageriePrive() {
             }
           }
 
-          if (lastMsg?.timestamp) {
-            lastMsgTimestamps.current[membre.id] = lastMsg.timestamp
-          }
-
+          if (lastMsg?.timestamp) lastMsgTimestamps.current[membre.id] = lastMsg.timestamp
           isFirst = false
 
           setLastMessages(prev => ({ ...prev, [membre.id]: lastMsg }))
@@ -265,11 +257,11 @@ export default function MessageriePrive() {
   }
   const getRoleLabel = (role) => {
     switch (role) {
-      case 'directrice':  return 'Directrice'
+      case 'directrice':   return 'Directrice'
       case 'superviseure': return 'Superviseure'
-      case 'vigie':       return 'Vigie'
-      case 'formateur':   return 'Formateur'
-      default:            return 'Agent'
+      case 'vigie':        return 'Vigie'
+      case 'formateur':    return 'Formateur'
+      default:             return 'Agent'
     }
   }
   const getInitials = (name) => {
@@ -291,9 +283,16 @@ export default function MessageriePrive() {
       if (userData?.role === 'agent') return isSupOrEquivalent(m.role)
       return false
     })
-    .sort((a, b) => (lastMessages[b.id]?.timestamp || 0) - (lastMessages[a.id]?.timestamp || 0))
+    .sort((a, b) => {
+      // ✅ Les membres en ligne apparaissent en premier
+      const aOnline = isOnline(a.id) ? 1 : 0
+      const bOnline = isOnline(b.id) ? 1 : 0
+      if (bOnline !== aOnline) return bOnline - aOnline
+      return (lastMessages[b.id]?.timestamp || 0) - (lastMessages[a.id]?.timestamp || 0)
+    })
 
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
+  const onlineCount = membresFiltrés.filter(m => isOnline(m.id)).length
 
   return (
     <div className="flex h-screen relative">
@@ -301,9 +300,10 @@ export default function MessageriePrive() {
       <style>{`
         @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
         @keyframes emojiPop { from { opacity: 0; transform: scale(0.7) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes pulse-green { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
       `}</style>
 
-      {/* ── Notification pop-up in-app ── */}
+      {/* ── Notification pop-up ── */}
       {notification && (
         <div
           className="absolute top-4 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-start gap-3 cursor-pointer hover:shadow-2xl transition"
@@ -335,13 +335,20 @@ export default function MessageriePrive() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-bold text-gray-800">✉️ Messagerie Privée</h2>
-              <p className="text-xs text-gray-400 mt-1">Conversations privées</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Conversations privées
+                {/* ✅ Compteur en ligne */}
+                {onlineCount > 0 && (
+                  <span className="ml-2 text-green-500 font-medium">• {onlineCount} en ligne</span>
+                )}
+              </p>
             </div>
             {totalUnread > 0 && (
               <span className="bg-red-500 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">{totalUnread}</span>
             )}
           </div>
         </div>
+
         <div className="flex-1 overflow-y-auto">
           {membresFiltrés.length === 0 && (
             <div className="text-center text-gray-400 p-6 text-sm">Aucun membre disponible</div>
@@ -353,6 +360,9 @@ export default function MessageriePrive() {
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ${getAvatarColor(membre.role)}`}>
                   {getInitials(membre.nom)}
                 </div>
+                {/* ✅ Point de statut en ligne / hors ligne */}
+                <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${isOnline(membre.id) ? 'bg-green-400' : 'bg-gray-300'}`} />
+                {/* Badge messages non lus */}
                 {unreadCounts[membre.id] > 0 && (
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
                     {unreadCounts[membre.id]}
@@ -361,17 +371,28 @@ export default function MessageriePrive() {
               </div>
               <div className="text-left flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <div className={`text-sm font-semibold ${unreadCounts[membre.id] > 0 ? 'text-gray-900' : 'text-gray-800'}`}>{membre.nom}</div>
+                  <div className={`text-sm font-semibold ${unreadCounts[membre.id] > 0 ? 'text-gray-900' : 'text-gray-800'}`}>
+                    {membre.nom}
+                  </div>
                   {lastMessages[membre.id] && (
                     <div className="text-xs text-gray-400 flex-shrink-0">{formatTime(lastMessages[membre.id]?.timestamp)}</div>
                   )}
                 </div>
-                <div className={`text-xs truncate ${unreadCounts[membre.id] > 0 ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
-                  {lastMessages[membre.id]
-                    ? lastMessages[membre.id].imageUrl
-                      ? (lastMessages[membre.id].senderId === user.uid ? 'Vous: ' : '') + '📷 Photo'
-                      : (lastMessages[membre.id].senderId === user.uid ? 'Vous: ' : '') + lastMessages[membre.id].texte
-                    : getRoleLabel(membre.role)}
+                <div className="flex items-center gap-1.5">
+                  {/* ✅ Label en ligne / hors ligne */}
+                  <span className={`text-xs font-medium ${isOnline(membre.id) ? 'text-green-500' : 'text-gray-400'}`}>
+                    {isOnline(membre.id) ? 'En ligne' : 'Hors ligne'}
+                  </span>
+                  {lastMessages[membre.id] && (
+                    <>
+                      <span className="text-gray-300 text-xs">·</span>
+                      <span className={`text-xs truncate ${unreadCounts[membre.id] > 0 ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
+                        {lastMessages[membre.id].imageUrl
+                          ? (lastMessages[membre.id].senderId === user.uid ? 'Vous: ' : '') + '📷 Photo'
+                          : (lastMessages[membre.id].senderId === user.uid ? 'Vous: ' : '') + lastMessages[membre.id].texte}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </button>
@@ -391,13 +412,25 @@ export default function MessageriePrive() {
           </div>
         ) : (
           <>
+            {/* Header conversation avec statut */}
             <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ${getAvatarColor(selectedMembre.role)}`}>
-                {getInitials(selectedMembre.nom)}
+              <div className="relative">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ${getAvatarColor(selectedMembre.role)}`}>
+                  {getInitials(selectedMembre.nom)}
+                </div>
+                {/* ✅ Point statut dans le header */}
+                <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${isOnline(selectedMembre.id) ? 'bg-green-400' : 'bg-gray-300'}`} />
               </div>
               <div>
                 <div className="font-bold text-gray-800">{selectedMembre.nom}</div>
-                <div className={`text-xs font-medium ${getRoleColor(selectedMembre.role)}`}>{getRoleLabel(selectedMembre.role)}</div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-medium ${getRoleColor(selectedMembre.role)}`}>{getRoleLabel(selectedMembre.role)}</span>
+                  <span className="text-gray-300">·</span>
+                  {/* ✅ Statut texte dans le header */}
+                  <span className={`text-xs font-medium ${isOnline(selectedMembre.id) ? 'text-green-500' : 'text-gray-400'}`}>
+                    {isOnline(selectedMembre.id) ? '🟢 En ligne' : '⚫ Hors ligne'}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -420,7 +453,6 @@ export default function MessageriePrive() {
                         <button
                           onClick={(e) => { e.stopPropagation(); setEmojiPickerId(emojiPickerId === msg.id ? null : msg.id); setMenuId(null) }}
                           className="opacity-0 group-hover:opacity-100 transition text-lg mb-1 hover:scale-110"
-                          title="Réagir"
                         >😊</button>
 
                         {emojiPickerId === msg.id && (
@@ -528,9 +560,9 @@ export default function MessageriePrive() {
               {canSendMessage(selectedMembre.role) ? (
                 <form onSubmit={sendMessage} className="flex gap-3">
                   <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
-                  <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 py-3 rounded-xl transition text-lg" title="Envoyer une image">📷</button>
+                  <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 py-3 rounded-xl transition text-lg">📷</button>
                   <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder={`Écrire à ${selectedMembre.nom}... (Ctrl+V pour coller une image)`}
+                    placeholder={`Écrire à ${selectedMembre.nom}...`}
                     className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm" />
                   <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium text-sm transition disabled:opacity-50">Envoyer</button>
                 </form>
