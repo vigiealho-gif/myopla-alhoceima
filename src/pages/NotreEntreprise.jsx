@@ -123,7 +123,7 @@ export default function NotreEntreprise() {
                     <label className="block text-sm font-medium text-gray-600 mb-1">{field.label}</label>
                     {field.type === 'input'
                       ? <input type="text" value={form[field.key]} onChange={(e) => setForm({ ...form, [field.key]: e.target.value })} placeholder={field.placeholder} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500" />
-                      : <textarea value={form[field.key]} onChange={(e) => setForm({ ...form, [field.key]: e.target.value })} placeholder={field.placeholder} rows={3} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 resize-none" />
+                      : <textarea value={form[field.key]} onChange={(e) => setForm({ ...form, [field.key]: e.target.value })} placeholder={field.placeholder} rows={4} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 resize-y" />
                     }
                   </div>
                 ))}
@@ -143,7 +143,6 @@ export default function NotreEntreprise() {
                   alt="Myopla Al Hoceima"
                   className="w-full h-full object-cover"
                 />
-                {/* Overlay avec nom de l'entreprise */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent flex items-end p-8">
                   <div>
                     <div className="text-white text-3xl font-black tracking-wide">
@@ -159,8 +158,9 @@ export default function NotreEntreprise() {
                 <>
                   <div className="bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-600 rounded-2xl p-6 text-white relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-48 h-48 bg-white opacity-5 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+                    {/* ✅ whitespace-pre-wrap pour la description */}
                     {presentation.description && (
-                      <p className="text-blue-100 leading-relaxed relative mb-5">{presentation.description}</p>
+                      <p className="text-blue-100 leading-relaxed relative mb-5 whitespace-pre-wrap">{presentation.description}</p>
                     )}
                     <div className="grid grid-cols-3 gap-4 relative">
                       {[
@@ -187,14 +187,14 @@ export default function NotreEntreprise() {
                       <div key={card.key} className={`bg-white rounded-2xl p-6 shadow-sm border-t-4 ${card.color}`}>
                         <div className="text-3xl mb-3">{card.icon}</div>
                         <h3 className="font-bold text-gray-800 mb-2">{card.title}</h3>
-                        <p className="text-gray-600 text-sm leading-relaxed">{presentation[card.key]}</p>
+                        {/* ✅ whitespace-pre-wrap respecte les sauts de ligne */}
+                        <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap">{presentation[card.key]}</p>
                       </div>
                     ))}
                   </div>
                 </>
               )}
 
-              {/* Message si pas encore de présentation */}
               {!presentation && (
                 <div className="text-center text-gray-400 mt-10">
                   <div className="text-4xl mb-3">🏢</div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { ref, push, onValue, serverTimestamp, remove } from 'firebase/database'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
+import { isSupOrEquivalent, getRoleLabel } from '../utils/roles'
 
 export default function Actualites() {
   const { userData } = useAuth()
@@ -9,7 +10,7 @@ export default function Actualites() {
   const [showForm, setShowForm] = useState(false)
   const [newActu, setNewActu] = useState({ titre: '', contenu: '', categorie: 'Info' })
 
-  const canPublish = userData?.role === 'directrice' || userData?.role === 'superviseure'
+  const canPublish = userData?.role === 'directrice' || isSupOrEquivalent(userData?.role)
 
   useEffect(() => {
     const actuRef = ref(db, 'actualites')
@@ -29,7 +30,6 @@ export default function Actualites() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!newActu.titre.trim() || !newActu.contenu.trim()) return
-
     await push(ref(db, 'actualites'), {
       titre: newActu.titre.trim(),
       contenu: newActu.contenu.trim(),
@@ -47,16 +47,16 @@ export default function Actualites() {
   }
 
   const getCategorieStyle = (cat) => {
-  switch (cat) {
-    case 'Urgent': return 'bg-red-100 text-red-600'
-    case 'Info': return 'bg-blue-100 text-blue-600'
-    case 'RH': return 'bg-green-100 text-green-600'
-    case 'Formation': return 'bg-purple-100 text-purple-600'
-    case 'Consigne': return 'bg-orange-100 text-orange-600'
-    case 'Bonne Pratique': return 'bg-yellow-100 text-yellow-600'
-    default: return 'bg-gray-100 text-gray-600'
+    switch (cat) {
+      case 'Urgent': return 'bg-red-100 text-red-600'
+      case 'Info': return 'bg-blue-100 text-blue-600'
+      case 'RH': return 'bg-green-100 text-green-600'
+      case 'Formation': return 'bg-purple-100 text-purple-600'
+      case 'Consigne': return 'bg-orange-100 text-orange-600'
+      case 'Bonne Pratique': return 'bg-yellow-100 text-yellow-600'
+      default: return 'bg-gray-100 text-gray-600'
+    }
   }
-}
 
   const formatDate = (timestamp) => {
     if (!timestamp) return ''
@@ -117,9 +117,9 @@ export default function Actualites() {
               <textarea
                 value={newActu.contenu}
                 onChange={(e) => setNewActu({ ...newActu, contenu: e.target.value })}
-                placeholder="Contenu de l'actualité..."
-                rows={4}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 resize-none"
+                placeholder="Contenu de l'actualité... (Entrée pour aller à la ligne)"
+                rows={6}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 resize-y"
                 required
               />
             </div>
@@ -159,9 +159,13 @@ export default function Actualites() {
                   </span>
                   <div className="flex-1">
                     <h3 className="font-bold text-gray-800">{actu.titre}</h3>
-                    <p className="text-gray-600 text-sm mt-2">{actu.contenu}</p>
+                    {/* ✅ whitespace-pre-wrap respecte les sauts de ligne */}
+                    <p className="text-gray-600 text-sm mt-2 whitespace-pre-wrap">{actu.contenu}</p>
                     <div className="flex items-center gap-2 mt-3 text-xs text-gray-400">
                       <span>Par {actu.auteur}</span>
+                      {actu.auteurRole && (
+                        <span className="italic">({getRoleLabel(actu.auteurRole)})</span>
+                      )}
                       <span>•</span>
                       <span>{formatDate(actu.timestamp)}</span>
                     </div>

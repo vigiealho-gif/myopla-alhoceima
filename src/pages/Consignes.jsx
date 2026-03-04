@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { ref, push, onValue, remove, update } from 'firebase/database'
 import { db } from '../firebase'
 import { useAuth } from '../context/AuthContext'
-
-const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].includes(role)
+import { isSupOrEquivalent, getRoleLabel } from '../utils/roles'
 
 export default function Consignes() {
   const { userData } = useAuth()
@@ -121,7 +120,14 @@ export default function Consignes() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">Contenu</label>
-              <textarea value={newConsigne.contenu} onChange={(e) => setNewConsigne({ ...newConsigne, contenu: e.target.value })} placeholder="Détails de la consigne..." rows={4} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 resize-none" required />
+              <textarea
+                value={newConsigne.contenu}
+                onChange={(e) => setNewConsigne({ ...newConsigne, contenu: e.target.value })}
+                placeholder="Détails de la consigne... (Entrée pour aller à la ligne)"
+                rows={6}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 resize-y"
+                required
+              />
             </div>
             <div className="flex gap-3">
               <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium text-sm transition">Publier</button>
@@ -156,7 +162,7 @@ export default function Consignes() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">Contenu</label>
-                    <textarea value={editData.contenu} onChange={(e) => setEditData({ ...editData, contenu: e.target.value })} rows={4} className="w-full px-4 py-2.5 border border-blue-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 resize-none" />
+                    <textarea value={editData.contenu} onChange={(e) => setEditData({ ...editData, contenu: e.target.value })} rows={6} className="w-full px-4 py-2.5 border border-blue-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 resize-y" />
                   </div>
                   <div className="flex gap-3">
                     <button onClick={() => saveEdit(consigne.id)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium text-sm transition">✓ Sauvegarder</button>
@@ -171,9 +177,13 @@ export default function Consignes() {
                     </span>
                     <div className="flex-1">
                       <h3 className="font-bold text-gray-800">{consigne.titre}</h3>
-                      <p className="text-gray-600 text-sm mt-2">{consigne.contenu}</p>
+                      {/* ✅ whitespace-pre-wrap respecte les sauts de ligne */}
+                      <p className="text-gray-600 text-sm mt-2 whitespace-pre-wrap">{consigne.contenu}</p>
                       <div className="flex items-center gap-2 mt-3 text-xs text-gray-400">
                         <span>Par {consigne.auteur}</span>
+                        {consigne.auteurRole && (
+                          <span className="italic">({getRoleLabel(consigne.auteurRole)})</span>
+                        )}
                         <span>•</span>
                         <span>{formatDate(consigne.timestamp)}</span>
                         {consigne.modifié && <span className="italic">(modifié)</span>}
