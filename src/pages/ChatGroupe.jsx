@@ -3,15 +3,35 @@ import { ref, push, onValue, serverTimestamp, update, remove } from 'firebase/da
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '../firebase'
 import { useAuth } from '../context/AuthContext'
+import { useNotification } from '../hooks/useNotification'
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '✅']
-
 const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].includes(role)
 
+// ✅ Rendu du texte avec @mentions surlignées en bleu
+function MessageText({ texte }) {
+  if (!texte) return null
+  const parts = texte.split(/(@\w[\w\s]*)/g)
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith('@') ? (
+          <span key={i} className="bg-blue-200 text-blue-800 rounded px-1 font-semibold">{part}</span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  )
+}
+
 export default function ChatGroupe() {
-  const { userData } = useAuth()
+  const { user, userData } = useAuth()
+  const { sendNotification } = useNotification()
+
   const [messages, setMessages] = useState([])
   const [newMessage, setNewMessage] = useState('')
+  const [membres, setMembres] = useState([])
   const [uploading, setUploading] = useState(false)
   const [selectedImage, setSelectedImage] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -20,15 +40,34 @@ export default function ChatGroupe() {
   const [emojiPickerId, setEmojiPickerId] = useState(null)
   const [notification, setNotification] = useState(null)
   const [unreadCount, setUnreadCount] = useState(0)
+
+  // ✅ États pour les mentions
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [showMentions, setShowMentions] = useState(false)
+  const [mentionSuggestions, setMentionSuggestions] = useState([])
+  const [cursorPos, setCursorPos] = useState(0)
+
   const messagesEndRef = useRef(null)
   const fileInputRef = useRef(null)
+  const inputRef = useRef(null)
   const isInitialLoad = useRef(true)
   const lastMessageCount = useRef(0)
   const notifTimeout = useRef(null)
 
+  // Charger les membres pour les suggestions @
+  useEffect(() => {
+    const usersRef = ref(db, 'users')
+    onValue(usersRef, (snap) => {
+      const data = snap.val()
+      if (data) {
+        const list = Object.entries(data).map(([id, u]) => ({ id, ...u }))
+        setMembres(list)
+      }
+    })
+  }, [])
+
   useEffect(() => {
     if (!userData?.nom) return
-
     isInitialLoad.current = true
     lastMessageCount.current = 0
 
@@ -46,6 +85,7 @@ export default function ChatGroupe() {
             setUnreadCount(prev => prev + 1)
             if (notifTimeout.current) clearTimeout(notifTimeout.current)
             notifTimeout.current = setTimeout(() => setNotification(null), 5000)
+
             try {
               const ctx = new (window.AudioContext || window.webkitAudioContext)()
               const o = ctx.createOscillator()
@@ -56,10 +96,14 @@ export default function ChatGroupe() {
               g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
               o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
             } catch (e) {}
-            if (Notification.permission === 'granted') {
-              new Notification(`💬 ${newMsg.nom}`, {
-                body: newMsg.imageUrl ? '📷 Photo' : newMsg.texte,
-                icon: '/favicon.ico'
+
+            // ✅ Notification spéciale si mentionné
+            if (newMsg.texte?.includes(`@${userData?.nom}`)) {
+              sendNotification({
+                title: `🔔 ${newMsg.nom} vous a mentionné`,
+                body: newMsg.texte,
+                icon: '/favicon.ico',
+                tag: `mention-${newMsg.nom}`
               })
             }
           }
@@ -89,7 +133,7 @@ export default function ChatGroupe() {
   }, [messages])
 
   useEffect(() => {
-    const handleClick = () => { setMenuId(null); setEmojiPickerId(null) }
+    const handleClick = () => { setMenuId(null); setEmojiPickerId(null); setShowMentions(false) }
     document.addEventListener('click', handleClick)
     return () => document.removeEventListener('click', handleClick)
   }, [])
@@ -112,6 +156,53 @@ export default function ChatGroupe() {
   const handleScroll = (e) => {
     const el = e.target
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 50) setUnreadCount(0)
+  }
+
+  // ✅ Détecter @ dans l'input et afficher les suggestions
+  const handleInputChange = (e) => {
+    const val = e.target.value
+    const pos = e.target.selectionStart
+    setNewMessage(val)
+    setCursorPos(pos)
+
+    // Chercher le dernier @ avant le curseur
+    const textBeforeCursor = val.slice(0, pos)
+    const atIndex = textBeforeCursor.lastIndexOf('@')
+
+    if (atIndex !== -1) {
+      const query = textBeforeCursor.slice(atIndex + 1)
+      // Pas d'espace dans la query → on est en train de taper un nom
+      if (!query.includes(' ') || query.length === 0) {
+        setMentionQuery(query)
+        const filtered = membres.filter(m =>
+          m.id !== user.uid &&
+          m.nom.toLowerCase().includes(query.toLowerCase())
+        )
+        setMentionSuggestions(filtered)
+        setShowMentions(filtered.length > 0)
+        return
+      }
+    }
+    setShowMentions(false)
+  }
+
+  // ✅ Insérer la mention dans le message
+  const insertMention = (membre) => {
+    const textBeforeCursor = newMessage.slice(0, cursorPos)
+    const atIndex = textBeforeCursor.lastIndexOf('@')
+    const before = newMessage.slice(0, atIndex)
+    const after = newMessage.slice(cursorPos)
+    const newText = `${before}@${membre.nom} ${after}`
+    setNewMessage(newText)
+    setShowMentions(false)
+    // Remettre le focus sur l'input
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus()
+        const newPos = before.length + membre.nom.length + 2
+        inputRef.current.setSelectionRange(newPos, newPos)
+      }
+    }, 0)
   }
 
   const toggleReaction = async (msgId, emoji) => {
@@ -168,7 +259,6 @@ export default function ChatGroupe() {
   }
 
   const handleFileChange = (e) => { const file = e.target.files[0]; if (file) setSelectedImage(file) }
-
   const startEdit = (msg) => { setEditingId(msg.id); setEditText(msg.texte); setMenuId(null) }
 
   const saveEdit = async (msgId) => {
@@ -225,6 +315,16 @@ export default function ChatGroupe() {
     return 'bg-blue-600'
   }
 
+  const getRoleLabel = (role) => {
+    switch (role) {
+      case 'directrice':   return 'Directrice'
+      case 'superviseure': return 'Superviseure'
+      case 'vigie':        return 'Vigie'
+      case 'formateur':    return 'Formateur'
+      default:             return 'Agent'
+    }
+  }
+
   const getInitials = (name) => {
     if (!name) return '?'
     return name.split(' ').map(w => w[0]).join('').toUpperCase()
@@ -232,13 +332,16 @@ export default function ChatGroupe() {
 
   const isMyMessage = (msg) => msg.nom === userData?.nom
 
+  // ✅ Vérifier si le message me mentionne
+  const mentionsMe = (msg) => msg.texte?.includes(`@${userData?.nom}`)
+
   return (
     <div className="flex flex-col h-screen relative">
 
       <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-800">💬 Chat Groupe</h1>
-          <p className="text-sm text-gray-400">Discussion générale de l'équipe</p>
+          <p className="text-sm text-gray-400">Discussion générale — tapez @ pour mentionner quelqu'un</p>
         </div>
         {unreadCount > 0 && (
           <div onClick={() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); setUnreadCount(0) }}
@@ -249,6 +352,7 @@ export default function ChatGroupe() {
         )}
       </div>
 
+      {/* Notification pop-up */}
       {notification && (
         <div className="absolute top-20 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-start gap-3 cursor-pointer hover:shadow-2xl transition"
           style={{ maxWidth: '300px', animation: 'slideIn 0.3s ease' }}
@@ -259,7 +363,7 @@ export default function ChatGroupe() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-bold text-gray-800 truncate">{notification.nom}</span>
-              <span className={`text-xs font-medium ${getRoleColor(notification.role)}`}>{notification.role}</span>
+              <span className={`text-xs font-medium ${getRoleColor(notification.role)}`}>{getRoleLabel(notification.role)}</span>
             </div>
             <p className="text-sm text-gray-600 mt-0.5 truncate">{notification.imageUrl ? '📷 Photo' : notification.texte}</p>
           </div>
@@ -270,14 +374,15 @@ export default function ChatGroupe() {
       <style>{`
         @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
         @keyframes emojiPop { from { opacity: 0; transform: scale(0.7) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes mentionPop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
 
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-gray-50" onScroll={handleScroll}>
         {messages.length === 0 && (
           <div className="text-center text-gray-400 mt-20">
             <div className="text-4xl mb-2">💬</div>
             <p>Aucun message pour l'instant</p>
-            <p className="text-sm">Soyez le premier à écrire !</p>
           </div>
         )}
 
@@ -298,7 +403,7 @@ export default function ChatGroupe() {
               <div className={`max-w-xs lg:max-w-md ${isMyMessage(msg) ? 'items-end' : 'items-start'} flex flex-col`}>
                 <div className={`flex items-center gap-2 mb-1 ${isMyMessage(msg) ? 'flex-row-reverse' : ''}`}>
                   <span className="text-sm font-semibold text-gray-700">{msg.nom}</span>
-                  <span className={`text-xs font-medium ${getRoleColor(msg.role)}`}>{msg.role}</span>
+                  <span className={`text-xs font-medium ${getRoleColor(msg.role)}`}>{getRoleLabel(msg.role)}</span>
                 </div>
 
                 <div className={`relative group flex items-end gap-1 ${isMyMessage(msg) ? 'flex-row-reverse' : ''}`}>
@@ -306,7 +411,6 @@ export default function ChatGroupe() {
                     <button
                       onClick={(e) => { e.stopPropagation(); setEmojiPickerId(emojiPickerId === msg.id ? null : msg.id); setMenuId(null) }}
                       className="opacity-0 group-hover:opacity-100 transition text-lg mb-1 hover:scale-110"
-                      title="Réagir"
                     >😊</button>
 
                     {emojiPickerId === msg.id && (
@@ -319,9 +423,9 @@ export default function ChatGroupe() {
                           const hasReacted = msg.reactions?.[emoji]?.[userData?.nom]
                           return (
                             <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
-                              className={`text-xl hover:scale-125 transition rounded-xl p-1 ${hasReacted ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
-                              title={emoji}
-                            >{emoji}</button>
+                              className={`text-xl hover:scale-125 transition rounded-xl p-1 ${hasReacted ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
+                              {emoji}
+                            </button>
                           )
                         })}
                       </div>
@@ -349,8 +453,16 @@ export default function ChatGroupe() {
                                 onClick={() => window.open(msg.imageUrl, '_blank')} />
                             </div>
                           ) : (
-                            <div className={`px-4 py-2 rounded-2xl text-sm ${isMyMessage(msg) ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white text-gray-800 shadow-sm rounded-tl-sm'}`}>
-                              {msg.texte}
+                            // ✅ Bulle avec fond jaune si je suis mentionné
+                            <div className={`px-4 py-2 rounded-2xl text-sm ${
+                              mentionsMe(msg)
+                                ? 'bg-yellow-50 border border-yellow-300 text-gray-800 rounded-tl-sm'
+                                : isMyMessage(msg)
+                                  ? 'bg-blue-600 text-white rounded-tr-sm'
+                                  : 'bg-white text-gray-800 shadow-sm rounded-tl-sm'
+                            }`}>
+                              {/* ✅ Rendu avec mentions surlignées */}
+                              <MessageText texte={msg.texte} />
                               {msg.modifié && <span className="text-xs opacity-60 ml-1">(modifié)</span>}
                             </div>
                           )}
@@ -399,6 +511,7 @@ export default function ChatGroupe() {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Preview image */}
       {selectedImage && (
         <div className="bg-blue-50 border-t border-blue-200 px-6 py-3 flex items-center gap-3">
           <img src={URL.createObjectURL(selectedImage)} alt="preview" className="h-16 w-16 object-cover rounded-lg" />
@@ -413,13 +526,62 @@ export default function ChatGroupe() {
         </div>
       )}
 
-      <div className="bg-white border-t border-gray-200 px-6 py-4">
+      {/* Zone de saisie */}
+      <div className="bg-white border-t border-gray-200 px-6 py-4 relative">
+
+        {/* ✅ Popup suggestions @mentions */}
+        {showMentions && (
+          <div
+            className="absolute bottom-full left-6 mb-2 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 min-w-48"
+            style={{ animation: 'mentionPop 0.15s ease' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Mentionner</span>
+            </div>
+            {mentionSuggestions.map(membre => (
+              <button
+                key={membre.id}
+                onClick={() => insertMention(membre)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 transition text-left"
+              >
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${
+                  membre.role === 'directrice' ? 'bg-amber-500' :
+                  membre.role === 'superviseure' ? 'bg-purple-600' :
+                  membre.role === 'vigie' ? 'bg-indigo-500' :
+                  membre.role === 'formateur' ? 'bg-teal-500' : 'bg-blue-600'
+                }`}>
+                  {getInitials(membre.nom)}
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-800">{membre.nom}</div>
+                  <div className={`text-xs ${getRoleColor(membre.role)}`}>{getRoleLabel(membre.role)}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
         <form onSubmit={sendMessage} className="flex gap-3">
           <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
-          <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 py-3 rounded-xl transition text-lg" title="Envoyer une image">📷</button>
-          <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Écrire un message... (Ctrl+V pour coller une image)"
-            className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm" />
+          <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 py-3 rounded-xl transition text-lg">📷</button>
+          <input
+            ref={inputRef}
+            type="text"
+            value={newMessage}
+            onChange={handleInputChange}
+            onKeyDown={(e) => {
+              // Fermer les suggestions avec Echap
+              if (e.key === 'Escape') setShowMentions(false)
+              // Sélectionner le premier avec Entrée si suggestions ouvertes
+              if (e.key === 'Enter' && showMentions && mentionSuggestions.length > 0) {
+                e.preventDefault()
+                insertMention(mentionSuggestions[0])
+              }
+            }}
+            placeholder="Écrire un message... (@ pour mentionner, Ctrl+V pour image)"
+            className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm"
+          />
           <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium text-sm transition disabled:opacity-50">
             Envoyer
           </button>
