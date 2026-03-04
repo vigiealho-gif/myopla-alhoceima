@@ -3,6 +3,7 @@ import { ref, push, onValue, serverTimestamp, set, update, remove } from 'fireba
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '../firebase'
 import { useAuth } from '../context/AuthContext'
+import { useNotification } from '../hooks/useNotification'
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '✅']
 
@@ -10,6 +11,8 @@ const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].inclu
 
 export default function MessageriePrive() {
   const { user, userData } = useAuth()
+  const { requestPermission, sendNotification } = useNotification()
+
   const [membres, setMembres] = useState([])
   const [selectedMembre, setSelectedMembre] = useState(null)
   const [messages, setMessages] = useState([])
@@ -30,8 +33,9 @@ export default function MessageriePrive() {
 
   const getConvId = (uid1, uid2) => [uid1, uid2].sort().join('_')
 
+  // ✅ Demander la permission dès le montage
   useEffect(() => {
-    if (Notification.permission === 'default') Notification.requestPermission()
+    requestPermission()
   }, [])
 
   useEffect(() => {
@@ -46,14 +50,14 @@ export default function MessageriePrive() {
     return () => unsubscribe()
   }, [user.uid])
 
-  // ── Écouter toutes les conversations pour badges + notifications ──
+  // ✅ Écouter toutes les conversations — notifications navigateur natives
   useEffect(() => {
     if (membres.length === 0 || !user.uid) return
 
     const unsubscribes = membres.map(membre => {
       const convId = getConvId(user.uid, membre.id)
       const convRef = ref(db, `messages_prives/${convId}`)
-      let isFirst = true  // ← flag par conversation
+      let isFirst = true
 
       return onValue(convRef, (snapshot) => {
         const data = snapshot.val()
@@ -62,11 +66,11 @@ export default function MessageriePrive() {
           list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
           const lastMsg = list[list.length - 1]
 
-          // ── Notification uniquement après le premier chargement ──
           if (!isFirst && lastMsg && lastMsg.senderId !== user.uid && lastMsg.timestamp) {
             const prevTimestamp = lastMsgTimestamps.current[membre.id] || 0
             if (lastMsg.timestamp > prevTimestamp) {
-              // Pop-up dans l'app
+
+              // ── Notification pop-up dans l'app ──
               setNotification({
                 ...lastMsg,
                 senderNom: lastMsg.senderNom || membre.nom,
@@ -75,7 +79,7 @@ export default function MessageriePrive() {
               if (notifTimeout.current) clearTimeout(notifTimeout.current)
               notifTimeout.current = setTimeout(() => setNotification(null), 5000)
 
-              // Son
+              // ── Son ──
               try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)()
                 const o = ctx.createOscillator()
@@ -87,24 +91,22 @@ export default function MessageriePrive() {
                 o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
               } catch (e) {}
 
-              // Notification navigateur (fonctionne même fenêtre minimisée)
-              if (Notification.permission === 'granted') {
-                new Notification(`✉️ Message privé de ${lastMsg.senderNom || membre.nom}`, {
-                  body: lastMsg.imageUrl ? '📷 Photo' : lastMsg.texte,
-                  icon: '/favicon.ico',
-                  tag: `msg-${lastMsg.senderId}`,
-                  renotify: true
-                })
-              }
+              // ✅ Notification navigateur native via Service Worker
+              // Fonctionne même si l'onglet est en arrière-plan, minimisé ou sur un autre onglet
+              sendNotification({
+                title: `✉️ Message privé de ${lastMsg.senderNom || membre.nom}`,
+                body: lastMsg.imageUrl ? '📷 Photo' : lastMsg.texte,
+                icon: '/favicon.ico',
+                tag: `msg-prive-${lastMsg.senderId}`,
+              })
             }
           }
 
-          // Mettre à jour le timestamp de référence
           if (lastMsg?.timestamp) {
             lastMsgTimestamps.current[membre.id] = lastMsg.timestamp
           }
 
-          isFirst = false  // ← premier chargement terminé
+          isFirst = false
 
           setLastMessages(prev => ({ ...prev, [membre.id]: lastMsg }))
           const unread = list.filter(msg => msg.senderId !== user.uid && !msg.readBy?.[user.uid]).length
@@ -262,11 +264,13 @@ export default function MessageriePrive() {
     return 'text-blue-600'
   }
   const getRoleLabel = (role) => {
-    if (role === 'directrice') return 'Directrice'
-    if (role === 'superviseure') return 'Superviseure'
-    if (role === 'vigie') return 'Vigie'
-    if (role === 'formateur') return 'Formateur'
-    return 'Agent'
+    switch (role) {
+      case 'directrice':  return 'Directrice'
+      case 'superviseure': return 'Superviseure'
+      case 'vigie':       return 'Vigie'
+      case 'formateur':   return 'Formateur'
+      default:            return 'Agent'
+    }
   }
   const getInitials = (name) => {
     if (!name) return '?'
@@ -299,7 +303,7 @@ export default function MessageriePrive() {
         @keyframes emojiPop { from { opacity: 0; transform: scale(0.7) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
       `}</style>
 
-      {/* ── Notification pop-up ── */}
+      {/* ── Notification pop-up in-app ── */}
       {notification && (
         <div
           className="absolute top-4 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-start gap-3 cursor-pointer hover:shadow-2xl transition"

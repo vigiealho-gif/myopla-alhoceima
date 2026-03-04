@@ -89,10 +89,15 @@ export default function Dashboard() {
     return new Date(timestamp).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   }
 
+  // ✅ CORRIGÉ : vigie et formateur affichent leur vrai label
   const getRoleLabel = (role) => {
-    if (role === 'directrice') return 'Directrice'
-    if (role === 'superviseure') return 'Superviseure'
-    return 'Agent'
+    switch (role) {
+      case 'directrice':  return 'Directrice'
+      case 'superviseure': return 'Superviseure'
+      case 'vigie':       return 'Vigie'
+      case 'formateur':   return 'Formateur'
+      default:            return 'Agent'
+    }
   }
 
   return (
@@ -118,6 +123,7 @@ export default function Dashboard() {
               <h1 className="text-3xl font-bold text-white mb-1">
                 Bonjour, {userData?.nom?.split(' ')[0]} 👋
               </h1>
+              {/* ✅ Affiche maintenant "Vigie", "Formateur", etc. */}
               <p className="text-blue-200 text-sm">{getRoleLabel(userData?.role)} — Myopla Al Hoceima</p>
 
               <div className="mt-4 flex items-center gap-4">

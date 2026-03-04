@@ -37,7 +37,6 @@ export default function Sidebar({ activePage, onNavigate }) {
     return () => { unsubC(); unsubP() }
   }, [user])
 
-  // Compter tous les messages non lus dans toutes les conversations
   useEffect(() => {
     if (!user) return
 
@@ -51,10 +50,8 @@ export default function Sidebar({ activePage, onNavigate }) {
 
       let totalUnread = 0
       Object.entries(data).forEach(([convId, messages]) => {
-        // Vérifier si cette conversation concerne l'utilisateur
         if (!convId.includes(user.uid)) return
         if (!messages) return
-
         Object.values(messages).forEach(msg => {
           if (msg.senderId !== user.uid && !msg.readBy?.[user.uid]) {
             totalUnread++
@@ -83,16 +80,26 @@ export default function Sidebar({ activePage, onNavigate }) {
     await signOut(auth)
   }
 
+  // ✅ CORRIGÉ : vigie et formateur ont leur vraie couleur
   const getRoleColor = (role) => {
-    if (role === 'directrice') return 'text-amber-600'
-    if (role === 'superviseure') return 'text-purple-600'
-    return 'text-blue-600'
+    switch (role) {
+      case 'directrice':  return 'text-amber-600'
+      case 'superviseure': return 'text-purple-600'
+      case 'vigie':       return 'text-indigo-600'
+      case 'formateur':   return 'text-teal-600'
+      default:            return 'text-blue-600'
+    }
   }
 
+  // ✅ CORRIGÉ : vigie et formateur affichent leur vrai label
   const getRoleLabel = (role) => {
-    if (role === 'directrice') return 'Directrice'
-    if (role === 'superviseure') return 'Superviseure'
-    return 'Agent'
+    switch (role) {
+      case 'directrice':  return 'Directrice'
+      case 'superviseure': return 'Superviseure'
+      case 'vigie':       return 'Vigie'
+      case 'formateur':   return 'Formateur'
+      default:            return 'Agent'
+    }
   }
 
   const getInitials = (name) => {
@@ -100,10 +107,15 @@ export default function Sidebar({ activePage, onNavigate }) {
     return name.split(' ').map(w => w[0]).join('').toUpperCase()
   }
 
+  // ✅ CORRIGÉ : vigie et formateur ont leur vraie couleur d'avatar
   const getAvatarColor = (role) => {
-    if (role === 'directrice') return 'bg-amber-500'
-    if (role === 'superviseure') return 'bg-purple-600'
-    return 'bg-blue-600'
+    switch (role) {
+      case 'directrice':  return 'bg-amber-500'
+      case 'superviseure': return 'bg-purple-600'
+      case 'vigie':       return 'bg-indigo-500'
+      case 'formateur':   return 'bg-teal-500'
+      default:            return 'bg-blue-600'
+    }
   }
 
   const menuItemsMain = [
@@ -197,7 +209,8 @@ export default function Sidebar({ activePage, onNavigate }) {
           </button>
         ))}
 
-        {userData?.role === 'directrice' && (
+        {/* ✅ Administration visible pour directrice ET superviseure */}
+        {(userData?.role === 'directrice' || userData?.role === 'superviseure') && (
           <>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2 mt-4">
               Administration
@@ -216,6 +229,7 @@ export default function Sidebar({ activePage, onNavigate }) {
 
       <div className="px-4 py-4 border-t border-gray-200">
         <div className="flex items-center gap-3 mb-3">
+          {/* ✅ Avatar avec couleur correcte selon le rôle */}
           <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold ${getAvatarColor(userData?.role)}`}>
             {getInitials(userData?.nom)}
           </div>
@@ -223,6 +237,7 @@ export default function Sidebar({ activePage, onNavigate }) {
             <div className="text-sm font-semibold text-gray-800 truncate">
               {userData?.nom || 'Utilisateur'}
             </div>
+            {/* ✅ Affiche "Vigie" ou "Formateur" avec la bonne couleur */}
             <div className={`text-xs font-medium ${getRoleColor(userData?.role)}`}>
               {getRoleLabel(userData?.role)}
             </div>
