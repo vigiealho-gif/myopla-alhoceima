@@ -3,7 +3,7 @@ import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { ref, onValue } from 'firebase/database'
 import { db } from '../firebase'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import logo from '../assets/logo.png'
 
 export default function Sidebar({ activePage, onNavigate }) {
@@ -11,6 +11,13 @@ export default function Sidebar({ activePage, onNavigate }) {
   const [newConsignes, setNewConsignes] = useState(0)
   const [newPratiques, setNewPratiques] = useState(0)
   const [unreadMessages, setUnreadMessages] = useState(0)
+
+  // ✅ Recherche globale
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [showResults, setShowResults] = useState(false)
+  const [allData, setAllData] = useState({ consignes: [], pratiques: [], actualites: [], membres: [] })
+  const searchRef = useRef(null)
 
   useEffect(() => {
     if (!user) return
@@ -22,6 +29,7 @@ export default function Sidebar({ activePage, onNavigate }) {
       if (data) {
         const count = Object.values(data).filter(c => c.timestamp > parseInt(lastSeen)).length
         setNewConsignes(count)
+        setAllData(prev => ({ ...prev, consignes: Object.entries(data).map(([id, c]) => ({ id, ...c })) }))
       }
     })
 
@@ -31,38 +39,132 @@ export default function Sidebar({ activePage, onNavigate }) {
       if (data) {
         const count = Object.values(data).filter(p => p.timestamp > parseInt(lastSeen)).length
         setNewPratiques(count)
+        setAllData(prev => ({ ...prev, pratiques: Object.entries(data).map(([id, p]) => ({ id, ...p })) }))
       }
     })
 
-    return () => { unsubC(); unsubP() }
+    const actualitesRef = ref(db, 'actualites')
+    const unsubA = onValue(actualitesRef, (snap) => {
+      const data = snap.val()
+      if (data) {
+        setAllData(prev => ({ ...prev, actualites: Object.entries(data).map(([id, a]) => ({ id, ...a })) }))
+      }
+    })
+
+    const usersRef = ref(db, 'users')
+    const unsubU = onValue(usersRef, (snap) => {
+      const data = snap.val()
+      if (data) {
+        setAllData(prev => ({ ...prev, membres: Object.entries(data).map(([id, u]) => ({ id, ...u })) }))
+      }
+    })
+
+    return () => { unsubC(); unsubP(); unsubA(); unsubU() }
   }, [user])
 
   useEffect(() => {
     if (!user) return
-
     const messagesRef = ref(db, 'messages_prives')
     const unsubM = onValue(messagesRef, (snap) => {
       const data = snap.val()
-      if (!data) {
-        setUnreadMessages(0)
-        return
-      }
-
+      if (!data) { setUnreadMessages(0); return }
       let totalUnread = 0
       Object.entries(data).forEach(([convId, messages]) => {
         if (!convId.includes(user.uid)) return
         if (!messages) return
         Object.values(messages).forEach(msg => {
-          if (msg.senderId !== user.uid && !msg.readBy?.[user.uid]) {
-            totalUnread++
-          }
+          if (msg.senderId !== user.uid && !msg.readBy?.[user.uid]) totalUnread++
         })
       })
       setUnreadMessages(totalUnread)
     })
-
     return () => unsubM()
   }, [user])
+
+  // ✅ Logique de recherche en temps réel
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([])
+      setShowResults(false)
+      return
+    }
+
+    const q = searchQuery.toLowerCase()
+    const results = []
+
+    allData.consignes.forEach(c => {
+      if (c.titre?.toLowerCase().includes(q) || c.contenu?.toLowerCase().includes(q)) {
+        results.push({
+          id: c.id, icon: '📋',
+          titre: c.titre,
+          extrait: c.contenu?.slice(0, 70),
+          page: 'consignes', couleur: 'text-blue-600', bg: 'bg-blue-50'
+        })
+      }
+    })
+
+    allData.pratiques.forEach(p => {
+      if (p.titre?.toLowerCase().includes(q) || p.contenu?.toLowerCase().includes(q)) {
+        results.push({
+          id: p.id, icon: '⭐',
+          titre: p.titre,
+          extrait: p.contenu?.slice(0, 70),
+          page: 'bonnes-pratiques', couleur: 'text-yellow-600', bg: 'bg-yellow-50'
+        })
+      }
+    })
+
+    allData.actualites.forEach(a => {
+      if (a.titre?.toLowerCase().includes(q) || a.contenu?.toLowerCase().includes(q)) {
+        results.push({
+          id: a.id, icon: '📰',
+          titre: a.titre,
+          extrait: a.contenu?.slice(0, 70),
+          page: 'actualites', couleur: 'text-green-600', bg: 'bg-green-50'
+        })
+      }
+    })
+
+    allData.membres.forEach(m => {
+      if (m.nom?.toLowerCase().includes(q)) {
+        results.push({
+          id: m.id, icon: '👤',
+          titre: m.nom,
+          extrait: getRoleLabel(m.role),
+          page: 'messagerie', couleur: 'text-purple-600', bg: 'bg-purple-50'
+        })
+      }
+    })
+
+    setSearchResults(results.slice(0, 8))
+    setShowResults(true)
+  }, [searchQuery, allData])
+
+  // Fermer en cliquant ailleurs
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) setShowResults(false)
+    }
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [])
+
+  // Surligner le terme recherché
+  const highlight = (text) => {
+    if (!searchQuery.trim() || !text) return text
+    const parts = text.split(new RegExp(`(${searchQuery.trim()})`, 'gi'))
+    return parts.map((part, i) =>
+      part.toLowerCase() === searchQuery.toLowerCase()
+        ? <mark key={i} className="bg-yellow-200 text-yellow-900 rounded px-0.5 not-italic">{part}</mark>
+        : part
+    )
+  }
+
+  const handleResultClick = (result) => {
+    setSearchQuery('')
+    setShowResults(false)
+    markAsSeen(result.page)
+  }
 
   const markAsSeen = (page) => {
     if ((page === 'consignes' || page === 'bonnes-pratiques') && user) {
@@ -70,35 +172,29 @@ export default function Sidebar({ activePage, onNavigate }) {
       if (page === 'consignes') setNewConsignes(0)
       if (page === 'bonnes-pratiques') setNewPratiques(0)
     }
-    if (page === 'messagerie') {
-      setUnreadMessages(0)
-    }
+    if (page === 'messagerie') setUnreadMessages(0)
     onNavigate(page)
   }
 
-  const handleLogout = async () => {
-    await signOut(auth)
-  }
+  const handleLogout = async () => { await signOut(auth) }
 
-  // ✅ CORRIGÉ : vigie et formateur ont leur vraie couleur
   const getRoleColor = (role) => {
     switch (role) {
-      case 'directrice':  return 'text-amber-600'
+      case 'directrice':   return 'text-amber-600'
       case 'superviseure': return 'text-purple-600'
-      case 'vigie':       return 'text-indigo-600'
-      case 'formateur':   return 'text-teal-600'
-      default:            return 'text-blue-600'
+      case 'vigie':        return 'text-indigo-600'
+      case 'formateur':    return 'text-teal-600'
+      default:             return 'text-blue-600'
     }
   }
 
-  // ✅ CORRIGÉ : vigie et formateur affichent leur vrai label
   const getRoleLabel = (role) => {
     switch (role) {
-      case 'directrice':  return 'Directrice'
+      case 'directrice':   return 'Directrice'
       case 'superviseure': return 'Superviseure'
-      case 'vigie':       return 'Vigie'
-      case 'formateur':   return 'Formateur'
-      default:            return 'Agent'
+      case 'vigie':        return 'Vigie'
+      case 'formateur':    return 'Formateur'
+      default:             return 'Agent'
     }
   }
 
@@ -107,14 +203,13 @@ export default function Sidebar({ activePage, onNavigate }) {
     return name.split(' ').map(w => w[0]).join('').toUpperCase()
   }
 
-  // ✅ CORRIGÉ : vigie et formateur ont leur vraie couleur d'avatar
   const getAvatarColor = (role) => {
     switch (role) {
-      case 'directrice':  return 'bg-amber-500'
+      case 'directrice':   return 'bg-amber-500'
       case 'superviseure': return 'bg-purple-600'
-      case 'vigie':       return 'bg-indigo-500'
-      case 'formateur':   return 'bg-teal-500'
-      default:            return 'bg-blue-600'
+      case 'vigie':        return 'bg-indigo-500'
+      case 'formateur':    return 'bg-teal-500'
+      default:             return 'bg-blue-600'
     }
   }
 
@@ -138,6 +233,7 @@ export default function Sidebar({ activePage, onNavigate }) {
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-60 bg-white border-r border-gray-200 flex flex-col z-50 shadow-sm">
 
+      {/* Logo */}
       <div className="px-5 py-4 border-b border-gray-200">
         <div className="flex items-center gap-3">
           <img src={logo} alt="Myopla" className="h-8 object-contain" />
@@ -148,54 +244,97 @@ export default function Sidebar({ activePage, onNavigate }) {
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 overflow-y-auto">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2">
-          Principal
+      {/* ✅ Barre de recherche */}
+      <div className="px-3 py-3 border-b border-gray-100 relative" ref={searchRef}>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => searchQuery && setShowResults(true)}
+            placeholder="Rechercher..."
+            className="w-full pl-8 pr-7 py-2 bg-gray-100 rounded-xl text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-200 transition"
+          />
+          {searchQuery && (
+            <button onClick={() => { setSearchQuery(''); setShowResults(false) }}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none">
+              ×
+            </button>
+          )}
         </div>
+
+        {/* ✅ Panneau résultats */}
+        {showResults && (
+          <div className="absolute left-3 right-3 top-full mt-1 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden"
+            style={{ maxHeight: '320px', overflowY: 'auto' }}>
+            {searchResults.length === 0 ? (
+              <div className="px-4 py-6 text-center text-gray-400 text-sm">
+                <div className="text-2xl mb-1">🔍</div>
+                <p>Aucun résultat pour</p>
+                <p className="font-semibold text-gray-600">"{searchQuery}"</p>
+              </div>
+            ) : (
+              <>
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 sticky top-0">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    {searchResults.length} résultat{searchResults.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+                {searchResults.map((result, i) => (
+                  <button key={i} onClick={() => handleResultClick(result)}
+                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition text-left border-b border-gray-50 last:border-0">
+                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-base ${result.bg}`}>
+                      {result.icon}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm font-semibold truncate ${result.couleur}`}>
+                        {highlight(result.titre)}
+                      </div>
+                      <div className="text-xs text-gray-400 truncate mt-0.5">
+                        {highlight(result.extrait)}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2">Principal</div>
         {menuItemsMain.map(item => (
-          <button
-            key={item.id}
-            onClick={() => markAsSeen(item.id)}
+          <button key={item.id} onClick={() => markAsSeen(item.id)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-all
-              ${activePage === item.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
-          >
+              ${activePage === item.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>
             <span className="text-base">{item.icon}</span>
             {item.label}
           </button>
         ))}
 
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2 mt-4">
-          Communication
-        </div>
+        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2 mt-4">Communication</div>
         {menuItemsComm.map(item => (
-          <button
-            key={item.id}
-            onClick={() => markAsSeen(item.id)}
+          <button key={item.id} onClick={() => markAsSeen(item.id)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-all
-              ${activePage === item.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
-          >
+              ${activePage === item.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>
             <span className="text-base">{item.icon}</span>
             <span className="flex-1 text-left">{item.label}</span>
             {item.badge > 0 && (
-              <span className="flex items-center gap-1">
-                <span className="bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                  {item.badge}
-                </span>
+              <span className="bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                {item.badge}
               </span>
             )}
           </button>
         ))}
 
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2 mt-4">
-          Contenu
-        </div>
+        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2 mt-4">Contenu</div>
         {menuItemsContenu.map(item => (
-          <button
-            key={item.id}
-            onClick={() => markAsSeen(item.id)}
+          <button key={item.id} onClick={() => markAsSeen(item.id)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-all
-              ${activePage === item.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
-          >
+              ${activePage === item.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>
             <span className="text-base">{item.icon}</span>
             <span className="flex-1 text-left">{item.label}</span>
             {item.badge > 0 && (
@@ -209,17 +348,12 @@ export default function Sidebar({ activePage, onNavigate }) {
           </button>
         ))}
 
-        {/* ✅ Administration visible pour directrice ET superviseure */}
         {(userData?.role === 'directrice' || userData?.role === 'superviseure') && (
           <>
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2 mt-4">
-              Administration
-            </div>
-            <button
-              onClick={() => markAsSeen('administration')}
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2 mt-4">Administration</div>
+            <button onClick={() => markAsSeen('administration')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-all
-                ${activePage === 'administration' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
-            >
+                ${activePage === 'administration' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>
               <span className="text-base">⚙️</span>
               Administration
             </button>
@@ -227,26 +361,18 @@ export default function Sidebar({ activePage, onNavigate }) {
         )}
       </nav>
 
+      {/* Profil */}
       <div className="px-4 py-4 border-t border-gray-200">
         <div className="flex items-center gap-3 mb-3">
-          {/* ✅ Avatar avec couleur correcte selon le rôle */}
           <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold ${getAvatarColor(userData?.role)}`}>
             {getInitials(userData?.nom)}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-gray-800 truncate">
-              {userData?.nom || 'Utilisateur'}
-            </div>
-            {/* ✅ Affiche "Vigie" ou "Formateur" avec la bonne couleur */}
-            <div className={`text-xs font-medium ${getRoleColor(userData?.role)}`}>
-              {getRoleLabel(userData?.role)}
-            </div>
+            <div className="text-sm font-semibold text-gray-800 truncate">{userData?.nom || 'Utilisateur'}</div>
+            <div className={`text-xs font-medium ${getRoleColor(userData?.role)}`}>{getRoleLabel(userData?.role)}</div>
           </div>
         </div>
-        <button
-          onClick={handleLogout}
-          className="w-full text-xs text-gray-400 hover:text-red-500 transition text-left"
-        >
+        <button onClick={handleLogout} className="w-full text-xs text-gray-400 hover:text-red-500 transition text-left">
           🚪 Se déconnecter
         </button>
       </div>
