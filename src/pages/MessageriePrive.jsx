@@ -22,15 +22,14 @@ export default function MessageriePrive() {
   const [editText, setEditText] = useState('')
   const [menuId, setMenuId] = useState(null)
   const [emojiPickerId, setEmojiPickerId] = useState(null)
-  const [notification, setNotification] = useState(null)  // ← NOUVEAU
+  const [notification, setNotification] = useState(null)
   const messagesEndRef = useRef(null)
   const fileInputRef = useRef(null)
-  const notifTimeout = useRef(null)  // ← NOUVEAU
-  const lastMsgTimestamps = useRef({})  // ← NOUVEAU
+  const notifTimeout = useRef(null)
+  const lastMsgTimestamps = useRef({})
 
   const getConvId = (uid1, uid2) => [uid1, uid2].sort().join('_')
 
-  // ── Demander permission notifications ──
   useEffect(() => {
     if (Notification.permission === 'default') Notification.requestPermission()
   }, [])
@@ -49,65 +48,76 @@ export default function MessageriePrive() {
 
   // ── Écouter toutes les conversations pour badges + notifications ──
   useEffect(() => {
-    if (membres.length === 0) return
+    if (membres.length === 0 || !user.uid) return
+
     const unsubscribes = membres.map(membre => {
       const convId = getConvId(user.uid, membre.id)
       const convRef = ref(db, `messages_prives/${convId}`)
+      let isFirst = true  // ← flag par conversation
+
       return onValue(convRef, (snapshot) => {
         const data = snapshot.val()
         if (data) {
           const list = Object.entries(data).map(([id, msg]) => ({ id, ...msg }))
-          list.sort((a, b) => a.timestamp - b.timestamp)
+          list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
           const lastMsg = list[list.length - 1]
 
-          // ── Notification si nouveau message reçu ──
-          const prevTimestamp = lastMsgTimestamps.current[membre.id] || 0
-          if (
-            lastMsg &&
-            lastMsg.senderId !== user.uid &&
-            lastMsg.timestamp > prevTimestamp &&
-            prevTimestamp !== 0
-          ) {
-            // Pop-up dans l'app
-            setNotification({ ...lastMsg, senderNom: lastMsg.senderNom || membre.nom, senderRole: lastMsg.senderRole || membre.role })
-            if (notifTimeout.current) clearTimeout(notifTimeout.current)
-            notifTimeout.current = setTimeout(() => setNotification(null), 5000)
-
-            // Son
-            try {
-              const ctx = new (window.AudioContext || window.webkitAudioContext)()
-              const o = ctx.createOscillator()
-              const g = ctx.createGain()
-              o.connect(g); g.connect(ctx.destination)
-              o.frequency.value = 660
-              g.gain.setValueAtTime(0.1, ctx.currentTime)
-              g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
-              o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
-            } catch (e) {}
-
-            // Notification navigateur
-            if (Notification.permission === 'granted') {
-              new Notification(`✉️ ${lastMsg.senderNom || membre.nom}`, {
-                body: lastMsg.imageUrl ? '📷 Photo' : lastMsg.texte,
-                icon: '/favicon.ico'
+          // ── Notification uniquement après le premier chargement ──
+          if (!isFirst && lastMsg && lastMsg.senderId !== user.uid && lastMsg.timestamp) {
+            const prevTimestamp = lastMsgTimestamps.current[membre.id] || 0
+            if (lastMsg.timestamp > prevTimestamp) {
+              // Pop-up dans l'app
+              setNotification({
+                ...lastMsg,
+                senderNom: lastMsg.senderNom || membre.nom,
+                senderRole: lastMsg.senderRole || membre.role
               })
+              if (notifTimeout.current) clearTimeout(notifTimeout.current)
+              notifTimeout.current = setTimeout(() => setNotification(null), 5000)
+
+              // Son
+              try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)()
+                const o = ctx.createOscillator()
+                const g = ctx.createGain()
+                o.connect(g); g.connect(ctx.destination)
+                o.frequency.value = 660
+                g.gain.setValueAtTime(0.1, ctx.currentTime)
+                g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+                o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
+              } catch (e) {}
+
+              // Notification navigateur (fonctionne même fenêtre minimisée)
+              if (Notification.permission === 'granted') {
+                new Notification(`✉️ Message privé de ${lastMsg.senderNom || membre.nom}`, {
+                  body: lastMsg.imageUrl ? '📷 Photo' : lastMsg.texte,
+                  icon: '/favicon.ico',
+                  tag: `msg-${lastMsg.senderId}`,
+                  renotify: true
+                })
+              }
             }
           }
 
+          // Mettre à jour le timestamp de référence
           if (lastMsg?.timestamp) {
             lastMsgTimestamps.current[membre.id] = lastMsg.timestamp
           }
+
+          isFirst = false  // ← premier chargement terminé
 
           setLastMessages(prev => ({ ...prev, [membre.id]: lastMsg }))
           const unread = list.filter(msg => msg.senderId !== user.uid && !msg.readBy?.[user.uid]).length
           setUnreadCounts(prev => ({ ...prev, [membre.id]: unread }))
         } else {
+          isFirst = false
           lastMsgTimestamps.current[membre.id] = 0
           setLastMessages(prev => ({ ...prev, [membre.id]: null }))
           setUnreadCounts(prev => ({ ...prev, [membre.id]: 0 }))
         }
       })
     })
+
     return () => {
       unsubscribes.forEach(u => u())
       if (notifTimeout.current) clearTimeout(notifTimeout.current)
@@ -308,13 +318,14 @@ export default function MessageriePrive() {
               <span className="text-sm font-bold text-gray-800 truncate">{notification.senderNom}</span>
               <span className={`text-xs font-medium ${getRoleColor(notification.senderRole)}`}>{getRoleLabel(notification.senderRole)}</span>
             </div>
-            <p className="text-xs text-gray-400 mb-0.5">Message privé</p>
+            <p className="text-xs text-gray-400 mb-0.5">Message privé ✉️</p>
             <p className="text-sm text-gray-600 truncate">{notification.imageUrl ? '📷 Photo' : notification.texte}</p>
           </div>
           <button onClick={(e) => { e.stopPropagation(); setNotification(null) }} className="text-gray-300 hover:text-gray-500 text-lg leading-none flex-shrink-0">×</button>
         </div>
       )}
 
+      {/* ── Liste membres ── */}
       <div className="w-72 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-4 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
@@ -364,6 +375,7 @@ export default function MessageriePrive() {
         </div>
       </div>
 
+      {/* ── Zone conversation ── */}
       <div className="flex-1 flex flex-col">
         {!selectedMembre ? (
           <div className="flex-1 flex items-center justify-center text-gray-400">
