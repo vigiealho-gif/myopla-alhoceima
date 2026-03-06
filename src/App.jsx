@@ -13,6 +13,7 @@ import Resultats from './pages/Resultats'
 import NotreEntreprise from './pages/NotreEntreprise'
 import Administration from './pages/Administration'
 import Pointage from './pages/Pointage'
+import Planning from './pages/Planning'
 import Sidebar from './components/Sidebar'
 
 function AppContent() {
@@ -22,91 +23,71 @@ function AppContent() {
   const notifTimeout = useRef(null)
   const initializedRef = useRef(false)
 
-  // ✅ Enregistrer SW + demander permission + sauvegarder token FCM
   useEffect(() => {
     if (!user) return
-
     const initFCM = async () => {
-      // 1. Demander permission navigateur
       if (!('Notification' in window)) return
       let permission = Notification.permission
-      if (permission === 'default') {
-        permission = await Notification.requestPermission()
-      }
+      if (permission === 'default') permission = await Notification.requestPermission()
       if (permission !== 'granted') return
-
-      // 2. Enregistrer le Service Worker
       if (!('serviceWorker' in navigator)) return
-      try {
-        await navigator.serviceWorker.register('/sw.js')
-      } catch (e) {
-        console.warn('SW non enregistré:', e)
-      }
-
-      // 3. Obtenir et sauvegarder le token FCM dans Firebase
+      try { await navigator.serviceWorker.register('/sw.js') } catch (e) {}
       try {
         const token = await getFCMToken()
         if (token) {
           await set(ref(db, `fcm_tokens/${user.uid}`), {
-            token,
-            nom: userData?.nom || '',
-            role: userData?.role || '',
-            updatedAt: Date.now()
+            token, nom: userData?.nom || '', role: userData?.role || '', updatedAt: Date.now()
           })
         }
-      } catch (e) {
-        console.warn('Token FCM impossible:', e)
-      }
+      } catch (e) {}
     }
-
     initFCM()
   }, [user, userData?.nom])
 
-  // ✅ Écouter les messages FCM quand l'app est au premier plan
   useEffect(() => {
     if (!user) return
     const unsubscribe = onForegroundMessage((payload) => {
       const title = payload.notification?.title || payload.data?.title || 'Myopla'
       const body  = payload.notification?.body  || payload.data?.body  || ''
-      const icon  = payload.data?.icon || '💬'
-      const color = payload.data?.color || 'bg-blue-100 text-blue-600'
-
-      showNotification({ titre: title, auteur: body, icon, color, type: '' })
+      showNotification({ titre: title, auteur: body, icon: '💬', color: 'bg-blue-100 text-blue-600', type: '' })
     })
     return () => unsubscribe && unsubscribe()
   }, [user])
 
-  // Écouter nouvelles consignes/pratiques (pour pop-up in-app)
   useEffect(() => {
     if (!user) return
-
     const initTimer = setTimeout(() => { initializedRef.current = true }, 3000)
-
     const unsubC = onValue(ref(db, 'consignes'), (snap) => {
       if (!initializedRef.current) return
       const data = snap.val()
       if (data) {
         const list = Object.values(data).sort((a, b) => b.timestamp - a.timestamp)
         const latest = list[0]
-        if (latest && Date.now() - latest.timestamp < 5000) {
+        if (latest && Date.now() - latest.timestamp < 5000)
           showNotification({ type: 'Consigne', titre: latest.titre, auteur: latest.auteur, icon: '📋', color: 'bg-blue-100 text-blue-600' })
-        }
       }
     })
-
     const unsubP = onValue(ref(db, 'bonnes_pratiques'), (snap) => {
       if (!initializedRef.current) return
       const data = snap.val()
       if (data) {
         const list = Object.values(data).sort((a, b) => b.timestamp - a.timestamp)
         const latest = list[0]
-        if (latest && Date.now() - latest.timestamp < 5000) {
+        if (latest && Date.now() - latest.timestamp < 5000)
           showNotification({ type: 'Bonne Pratique', titre: latest.titre, auteur: latest.auteur, icon: '⭐', color: 'bg-yellow-100 text-yellow-600' })
-        }
       }
     })
-
-    return () => { clearTimeout(initTimer); unsubC(); unsubP() }
+    const unsubPl = onValue(ref(db, 'plannings'), (snap) => {
+      if (!initializedRef.current) return
+      const data = snap.val()
+      if (data) {
+        const list = Object.values(data).sort((a, b) => b.timestamp - a.timestamp)
+        const latest = list[0]
+        if (latest && Date.now() - latest.timestamp < 5000)
+          showNotification({ type: 'Planning', titre: latest.titre, auteur: latest.auteur, icon: '📅', color: 'bg-green-100 text-green-600' })
+      }
+    })
+    return () => { clearTimeout(initTimer); unsubC(); unsubP(); unsubPl() }
   }, [user])
 
   const showNotification = (notif) => {
@@ -131,6 +112,7 @@ function AppContent() {
         {activePage === 'presentation'     && <NotreEntreprise />}
         {activePage === 'administration'   && <Administration />}
         {activePage === 'pointage'         && <Pointage onNavigate={setActivePage} />}
+        {activePage === 'planning'         && <Planning />}
       </main>
 
       {notification && (
@@ -140,9 +122,7 @@ function AppContent() {
             <div className="flex-1 min-w-0">
               {notification.type && (
                 <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${notification.color}`}>
-                    {notification.type && `Nouvelle ${notification.type}`}
-                  </span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${notification.color}`}>Nouveau {notification.type}</span>
                 </div>
               )}
               <div className="text-sm font-semibold text-gray-800 truncate">{notification.titre}</div>
@@ -165,9 +145,5 @@ function AppContent() {
 }
 
 export default function App() {
-  return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
-  )
+  return <AuthProvider><AppContent /></AuthProvider>
 }
