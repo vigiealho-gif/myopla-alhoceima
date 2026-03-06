@@ -27,7 +27,6 @@ export default function MessageriePrive() {
   const [menuId, setMenuId] = useState(null)
   const [emojiPickerId, setEmojiPickerId] = useState(null)
   const [notification, setNotification] = useState(null)
-  // ✅ Tooltip "vu" affiché
   const [vuTooltipId, setVuTooltipId] = useState(null)
 
   const messagesEndRef = useRef(null)
@@ -112,7 +111,6 @@ export default function MessageriePrive() {
         const list = Object.entries(data).map(([id, msg]) => ({ id, ...msg }))
         list.sort((a, b) => a.timestamp - b.timestamp)
         setMessages(list)
-        // ✅ Marquer comme lu avec timestamp
         list.forEach(msg => {
           if (msg.senderId !== user.uid && !msg.readBy?.[user.uid]) {
             update(ref(db, `messages_prives/${convId}/${msg.id}/readBy`), {
@@ -151,7 +149,6 @@ export default function MessageriePrive() {
     return () => window.removeEventListener('paste', handlePaste)
   }, [selectedMembre])
 
-  // ✅ Vérifie si le destinataire a lu le message
   const isReadByOther = (msg) => {
     if (msg.senderId !== user.uid) return false
     if (!msg.readBy) return false
@@ -161,15 +158,12 @@ export default function MessageriePrive() {
     })
   }
 
-  // ✅ Heure de lecture par l'autre
   const getReadTime = (msg) => {
     if (!msg.readBy) return null
     const entry = Object.entries(msg.readBy).find(([uid, val]) => uid !== user.uid && (val?.lu === true || val === true))
     if (!entry) return null
     const val = entry[1]
-    if (val?.lu_le) {
-      return new Date(val.lu_le).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-    }
+    if (val?.lu_le) return new Date(val.lu_le).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
     return null
   }
 
@@ -287,6 +281,7 @@ export default function MessageriePrive() {
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   }
 
+  // ✅ Tri par dernier message — le plus récent en premier
   const membresFiltrés = membres
     .filter(m => {
       if (userData?.role === 'directrice') return true
@@ -295,10 +290,14 @@ export default function MessageriePrive() {
       return false
     })
     .sort((a, b) => {
+      const aTime = lastMessages[a.id]?.timestamp || 0
+      const bTime = lastMessages[b.id]?.timestamp || 0
+      // ✅ Priorité 1 : dernier message le plus récent
+      if (bTime !== aTime) return bTime - aTime
+      // ✅ Priorité 2 : en ligne en premier si pas de messages
       const aOnline = isOnline(a.id) ? 1 : 0
       const bOnline = isOnline(b.id) ? 1 : 0
-      if (bOnline !== aOnline) return bOnline - aOnline
-      return (lastMessages[b.id]?.timestamp || 0) - (lastMessages[a.id]?.timestamp || 0)
+      return bOnline - aOnline
     })
 
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
@@ -313,6 +312,7 @@ export default function MessageriePrive() {
         @keyframes vuPop { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
 
+      {/* Notification in-app */}
       {notification && (
         <div className="absolute top-4 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-start gap-3 cursor-pointer hover:shadow-2xl transition"
           style={{ maxWidth: '300px', animation: 'slideIn 0.3s ease' }}
@@ -332,7 +332,7 @@ export default function MessageriePrive() {
         </div>
       )}
 
-      {/* Liste membres */}
+      {/* ── Liste membres ── */}
       <div className="w-72 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-4 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
@@ -350,7 +350,9 @@ export default function MessageriePrive() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {membresFiltrés.length === 0 && <div className="text-center text-gray-400 p-6 text-sm">Aucun membre disponible</div>}
+          {membresFiltrés.length === 0 && (
+            <div className="text-center text-gray-400 p-6 text-sm">Aucun membre disponible</div>
+          )}
           {membresFiltrés.map(membre => (
             <button key={membre.id} onClick={() => setSelectedMembre(membre)}
               className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition border-b border-gray-100 ${selectedMembre?.id === membre.id ? 'bg-blue-50' : ''}`}>
@@ -367,13 +369,13 @@ export default function MessageriePrive() {
               </div>
               <div className="text-left flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <div className={`text-sm font-semibold ${unreadCounts[membre.id] > 0 ? 'text-gray-900' : 'text-gray-800'}`}>{membre.nom}</div>
+                  <div className={`text-sm font-semibold truncate ${unreadCounts[membre.id] > 0 ? 'text-gray-900' : 'text-gray-800'}`}>{membre.nom}</div>
                   {lastMessages[membre.id] && (
-                    <div className="text-xs text-gray-400 flex-shrink-0">{formatTime(lastMessages[membre.id]?.timestamp)}</div>
+                    <div className="text-xs text-gray-400 flex-shrink-0 ml-1">{formatTime(lastMessages[membre.id]?.timestamp)}</div>
                   )}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-xs font-medium ${isOnline(membre.id) ? 'text-green-500' : 'text-gray-400'}`}>
+                  <span className={`text-xs font-medium flex-shrink-0 ${isOnline(membre.id) ? 'text-green-500' : 'text-gray-400'}`}>
                     {isOnline(membre.id) ? 'En ligne' : 'Hors ligne'}
                   </span>
                   {lastMessages[membre.id] && (
@@ -393,7 +395,7 @@ export default function MessageriePrive() {
         </div>
       </div>
 
-      {/* Zone conversation */}
+      {/* ── Zone conversation ── */}
       <div className="flex-1 flex flex-col">
         {!selectedMembre ? (
           <div className="flex-1 flex items-center justify-center text-gray-400">
@@ -405,6 +407,7 @@ export default function MessageriePrive() {
           </div>
         ) : (
           <>
+            {/* Header conversation */}
             <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3">
               <div className="relative">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ${getAvatarColor(selectedMembre.role)}`}>
@@ -424,6 +427,7 @@ export default function MessageriePrive() {
               </div>
             </div>
 
+            {/* Messages */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-gray-50">
               {messages.length === 0 && (
                 <div className="text-center text-gray-400 mt-20">
@@ -528,23 +532,17 @@ export default function MessageriePrive() {
                         </div>
                       </div>
 
-                      {/* ✅ Heure + statut vu */}
+                      {/* Heure + statut vu */}
                       <div className={`flex items-center gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
                         <span className="text-xs text-gray-400">{formatTime(msg.timestamp)}</span>
-
-                        {/* Coches seulement sur mes messages */}
                         {isMe && (
                           <div className="relative">
                             <button
                               onClick={(e) => { e.stopPropagation(); setVuTooltipId(vuTooltipId === msg.id ? null : msg.id) }}
                               className={`text-xs font-bold transition select-none ${read ? 'text-blue-500' : 'text-gray-300'}`}
-                              title={read ? `Vu${readTime ? ' à ' + readTime : ''}` : 'Envoyé'}
                             >
-                              {/* ✓✓ double coche */}
                               {read ? '✓✓' : '✓'}
                             </button>
-
-                            {/* ✅ Tooltip vu avec heure */}
                             {vuTooltipId === msg.id && (
                               <div className="absolute bottom-full right-0 mb-1 z-50 bg-gray-900 text-white rounded-xl px-3 py-2 text-xs whitespace-nowrap"
                                 style={{ animation: 'vuPop 0.15s ease' }}>
@@ -576,6 +574,7 @@ export default function MessageriePrive() {
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Preview image */}
             {selectedImage && (
               <div className="bg-blue-50 border-t border-blue-200 px-6 py-3 flex items-center gap-3">
                 <img src={URL.createObjectURL(selectedImage)} alt="preview" className="h-16 w-16 object-cover rounded-lg" />
@@ -590,6 +589,7 @@ export default function MessageriePrive() {
               </div>
             )}
 
+            {/* Zone de saisie */}
             <div className="bg-white border-t border-gray-200 px-6 py-4">
               {canSendMessage(selectedMembre.role) ? (
                 <form onSubmit={sendMessage} className="flex gap-3">
