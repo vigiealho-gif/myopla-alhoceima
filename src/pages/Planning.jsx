@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { ref, onValue, push, update, remove, set } from 'firebase/database'
+import { ref, onValue, push, remove } from 'firebase/database'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 
-const isManager = (role) => ['directrice', 'superviseure'].includes(role)
+// ✅ Vigie peut aussi publier
+const isManager = (role) => ['directrice', 'superviseure', 'vigie'].includes(role)
 
 export default function Planning() {
   const { user, userData } = useAuth()
@@ -58,7 +59,7 @@ export default function Planning() {
       const isImage = selectedFile.type.startsWith('image/')
       const isExcel = ['xlsx', 'xls'].includes(ext.toLowerCase())
 
-      const newId = (await push(ref(db, 'plannings'), {
+      const newEntry = await push(ref(db, 'plannings'), {
         titre: titre.trim(),
         semaine: semaine.trim(),
         url,
@@ -68,9 +69,9 @@ export default function Planning() {
         auteur: userData?.nom,
         role: userData?.role,
         timestamp: Date.now()
-      })).key
+      })
 
-      setActiveId(newId)
+      setActiveId(newEntry.key)
       setShowUpload(false)
       setTitre('')
       setSemaine('')
@@ -91,7 +92,7 @@ export default function Planning() {
 
   const activePlanning = plannings.find(p => p.id === activeId)
 
-  const getTypeIcon = (type, ext) => {
+  const getTypeIcon = (type) => {
     if (type === 'image') return '🖼️'
     if (type === 'excel') return '📊'
     return '📎'
@@ -121,7 +122,9 @@ export default function Planning() {
       <div className="bg-white border-b border-gray-200 px-8 py-5 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-800">📅 Planning</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{plannings.length} planning{plannings.length > 1 ? 's' : ''} disponible{plannings.length > 1 ? 's' : ''}</p>
+          <p className="text-sm text-gray-400 mt-0.5">
+            {plannings.length} planning{plannings.length > 1 ? 's' : ''} disponible{plannings.length > 1 ? 's' : ''}
+          </p>
         </div>
         {isManager(userData?.role) && (
           <button onClick={() => setShowUpload(!showUpload)}
@@ -161,12 +164,18 @@ export default function Planning() {
                 {preview ? (
                   <img src={preview} alt="preview" className="max-h-48 mx-auto rounded-xl mb-3 object-contain" />
                 ) : (
-                  <div className="text-5xl mb-3">{selectedFile.name.endsWith('xlsx') || selectedFile.name.endsWith('xls') ? '📊' : '📎'}</div>
+                  <div className="text-5xl mb-3">
+                    {selectedFile.name.endsWith('xlsx') || selectedFile.name.endsWith('xls') ? '📊' : '📎'}
+                  </div>
                 )}
                 <p className="font-medium text-gray-800 text-sm">{selectedFile.name}</p>
                 <p className="text-xs text-gray-400 mt-1">{(selectedFile.size / 1024).toFixed(1)} KB</p>
-                <button onClick={(e) => { e.stopPropagation(); setSelectedFile(null); setPreview(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
-                  className="mt-2 text-xs text-red-400 hover:text-red-600">Changer le fichier</button>
+                <button onClick={(e) => {
+                  e.stopPropagation()
+                  setSelectedFile(null)
+                  setPreview(null)
+                  if (fileInputRef.current) fileInputRef.current.value = ''
+                }} className="mt-2 text-xs text-red-400 hover:text-red-600">Changer le fichier</button>
               </div>
             ) : (
               <div>
@@ -181,10 +190,17 @@ export default function Planning() {
             <button onClick={handleUpload}
               disabled={!selectedFile || !titre.trim() || uploading}
               className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-medium text-sm transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-              {uploading ? <><span className="animate-spin">⏳</span> Publication...</> : '📤 Publier le planning'}
+              {uploading
+                ? <><span className="animate-spin">⏳</span> Publication...</>
+                : '📤 Publier le planning'}
             </button>
-            <button onClick={() => { setShowUpload(false); setSelectedFile(null); setPreview(null); setTitre(''); setSemaine('') }}
-              className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-sm font-medium transition">
+            <button onClick={() => {
+              setShowUpload(false)
+              setSelectedFile(null)
+              setPreview(null)
+              setTitre('')
+              setSemaine('')
+            }} className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-sm font-medium transition">
               Annuler
             </button>
           </div>
@@ -212,10 +228,14 @@ export default function Planning() {
                     <div className="flex items-start gap-3">
                       <span className="text-xl flex-shrink-0 mt-0.5">{getTypeIcon(p.type)}</span>
                       <div className="flex-1 min-w-0">
-                        <div className={`text-sm font-semibold truncate ${activeId === p.id ? 'text-green-700' : 'text-gray-800'}`}>{p.titre}</div>
+                        <div className={`text-sm font-semibold truncate ${activeId === p.id ? 'text-green-700' : 'text-gray-800'}`}>
+                          {p.titre}
+                        </div>
                         {p.semaine && <div className="text-xs text-gray-500 truncate mt-0.5">📅 {p.semaine}</div>}
                         <div className="flex items-center gap-2 mt-1">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getTypeBadge(p.type)}`}>{getTypeLabel(p.type)}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getTypeBadge(p.type)}`}>
+                            {getTypeLabel(p.type)}
+                          </span>
                           <span className="text-xs text-gray-400">{formatDate(p.timestamp)}</span>
                         </div>
                       </div>
@@ -252,19 +272,17 @@ export default function Planning() {
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-400">
                     {activePlanning.semaine && <span>📅 {activePlanning.semaine}</span>}
-                    <span>·</span>
+                    {activePlanning.semaine && <span>·</span>}
                     <span>Publié par <strong className="text-gray-600">{activePlanning.auteur}</strong></span>
                     <span>·</span>
                     <span>{formatDate(activePlanning.timestamp)}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {/* Télécharger */}
-                  <a href={activePlanning.url} target="_blank" rel="noopener noreferrer" download
+                  <a href={activePlanning.url} target="_blank" rel="noopener noreferrer"
                     className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2">
                     ⬇️ Télécharger
                   </a>
-                  {/* Supprimer (managers uniquement) */}
                   {isManager(userData?.role) && (
                     <button onClick={() => handleDelete(activePlanning.id)}
                       className="bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-xl text-sm font-medium transition">
