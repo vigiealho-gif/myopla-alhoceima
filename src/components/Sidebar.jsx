@@ -90,7 +90,12 @@ export default function Sidebar({ activePage, onNavigate }) {
     })
     allData.membres.forEach(m => {
       if (m.nom?.toLowerCase().includes(q))
-        results.push({ id: m.id, icon: '👤', titre: m.nom, extrait: getRoleLabel(m.role), page: 'messagerie', couleur: 'text-purple-600', bg: 'bg-purple-50' })
+        // ✅ membreData contient tout l'objet pour ouvrir la conversation directement
+        results.push({
+          id: m.id, icon: '👤', titre: m.nom, extrait: getRoleLabel(m.role),
+          page: 'messagerie', couleur: 'text-purple-600', bg: 'bg-purple-50',
+          membreData: m
+        })
     })
     allData.plannings.forEach(p => {
       if (p.titre?.toLowerCase().includes(q) || p.semaine?.toLowerCase().includes(q))
@@ -117,9 +122,20 @@ export default function Sidebar({ activePage, onNavigate }) {
     )
   }
 
-  const handleResultClick = (result) => { setSearchQuery(''); setShowResults(false); markAsSeen(result.page) }
+  const handleResultClick = (result) => {
+    setSearchQuery('')
+    setShowResults(false)
+    // ✅ Si membre → passe membreData à onNavigate pour ouvrir la conversation
+    if (result.page === 'messagerie' && result.membreData) {
+      markAsSeen('messagerie', result.membreData)
+    } else {
+      markAsSeen(result.page)
+    }
+  }
 
-  const markAsSeen = (page) => {
+  // ✅ onNavigate reçoit maintenant (page, membreToOpen)
+  // App.jsx doit passer ce membreToOpen à MessageriePrive via prop
+  const markAsSeen = (page, membreToOpen = null) => {
     if (['consignes', 'bonnes-pratiques', 'planning'].includes(page) && user) {
       localStorage.setItem(`lastSeen_${user.uid}`, Date.now())
       if (page === 'consignes') setNewConsignes(0)
@@ -127,7 +143,7 @@ export default function Sidebar({ activePage, onNavigate }) {
       if (page === 'planning') setNewPlannings(0)
     }
     if (page === 'messagerie') setUnreadMessages(0)
-    onNavigate(page)
+    onNavigate(page, membreToOpen)
   }
 
   const handleLogout = async () => { await signOut(auth) }

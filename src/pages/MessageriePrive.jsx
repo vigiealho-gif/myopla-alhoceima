@@ -9,13 +9,15 @@ import { usePresence } from '../hooks/usePresence'
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '✅']
 const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].includes(role)
 
-export default function MessageriePrive() {
+// ✅ Accepte initialMembre depuis App.jsx (vient de la recherche dans Sidebar)
+export default function MessageriePrive({ initialMembre = null }) {
   const { user, userData } = useAuth()
   const { requestPermission, sendNotification } = useNotification()
   const { isOnline } = usePresence()
 
   const [membres, setMembres] = useState([])
-  const [selectedMembre, setSelectedMembre] = useState(null)
+  // ✅ Initialiser selectedMembre avec initialMembre si fourni
+  const [selectedMembre, setSelectedMembre] = useState(initialMembre)
   const [messages, setMessages] = useState([])
   const [newMessage, setNewMessage] = useState('')
   const [lastMessages, setLastMessages] = useState({})
@@ -40,6 +42,11 @@ export default function MessageriePrive() {
   useEffect(() => {
     if (user?.uid) requestPermission(user.uid)
   }, [user?.uid])
+
+  // ✅ Si initialMembre change (nouvelle recherche), ouvrir cette conversation
+  useEffect(() => {
+    if (initialMembre) setSelectedMembre(initialMembre)
+  }, [initialMembre?.id])
 
   useEffect(() => {
     const usersRef = ref(db, 'users')
@@ -71,8 +78,6 @@ export default function MessageriePrive() {
               setNotification({ ...lastMsg, senderNom: lastMsg.senderNom || membre.nom, senderRole: lastMsg.senderRole || membre.role })
               if (notifTimeout.current) clearTimeout(notifTimeout.current)
               notifTimeout.current = setTimeout(() => setNotification(null), 5000)
-
-              // Son
               try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)()
                 const o = ctx.createOscillator(); const g = ctx.createGain()
@@ -82,8 +87,6 @@ export default function MessageriePrive() {
                 g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
                 o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
               } catch (e) {}
-
-              // ✅ Notification système — visible même sur autre onglet
               sendNotification({
                 title: `✉️ Message privé de ${lastMsg.senderNom || membre.nom}`,
                 body: lastMsg.imageUrl ? '📷 Photo' : lastMsg.texte,

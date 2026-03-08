@@ -19,6 +19,8 @@ import Sidebar from './components/Sidebar'
 function AppContent() {
   const { user, userData } = useAuth()
   const [activePage, setActivePage] = useState('dashboard')
+  // ✅ Membre à ouvrir directement dans MessageriePrive (depuis la recherche)
+  const [openMembre, setOpenMembre] = useState(null)
   const [notification, setNotification] = useState(null)
   const notifTimeout = useRef(null)
   const initializedRef = useRef(false)
@@ -31,7 +33,7 @@ function AppContent() {
       if (permission === 'default') permission = await Notification.requestPermission()
       if (permission !== 'granted') return
       if (!('serviceWorker' in navigator)) return
-      try { await navigator.serviceWorker.register('/sw.js') } catch (e) {}
+      try { await navigator.serviceWorker.register('/firebase-messaging-sw.js') } catch (e) {}
       try {
         const token = await getFCMToken()
         if (token) {
@@ -96,22 +98,30 @@ function AppContent() {
     notifTimeout.current = setTimeout(() => setNotification(null), 5000)
   }
 
+  // ✅ handleNavigate reçoit (page, membreToOpen)
+  // Sidebar appelle onNavigate(page, membreData) quand on clique sur un membre dans la recherche
+  const handleNavigate = (page, membreToOpen = null) => {
+    setActivePage(page)
+    setOpenMembre(membreToOpen) // null si navigation normale, objet membre si depuis recherche
+  }
+
   if (!user) return <Login />
 
   return (
     <div className="flex min-h-screen bg-gray-100">
-      <Sidebar activePage={activePage} onNavigate={setActivePage} />
+      <Sidebar activePage={activePage} onNavigate={handleNavigate} />
       <main className="ml-60 flex-1">
-        {activePage === 'dashboard'        && <Dashboard onNavigate={setActivePage} />}
+        {activePage === 'dashboard'        && <Dashboard onNavigate={handleNavigate} />}
         {activePage === 'groupe'           && <ChatGroupe />}
-        {activePage === 'messagerie'       && <MessageriePrive />}
+        {/* ✅ On passe initialMembre à MessageriePrive pour ouvrir directement la conversation */}
+        {activePage === 'messagerie'       && <MessageriePrive initialMembre={openMembre} />}
         {activePage === 'actualites'       && <Actualites />}
         {activePage === 'consignes'        && <Consignes />}
         {activePage === 'bonnes-pratiques' && <BonnesPratiques />}
         {activePage === 'resultats'        && <Resultats />}
         {activePage === 'presentation'     && <NotreEntreprise />}
         {activePage === 'administration'   && <Administration />}
-        {activePage === 'pointage'         && <Pointage onNavigate={setActivePage} />}
+        {activePage === 'pointage'         && <Pointage onNavigate={handleNavigate} />}
         {activePage === 'planning'         && <Planning />}
       </main>
 
