@@ -12,7 +12,6 @@ import BonnesPratiques from './pages/BonnesPratiques'
 import Resultats from './pages/Resultats'
 import NotreEntreprise from './pages/NotreEntreprise'
 import Administration from './pages/Administration'
-import Pointage from './pages/Pointage'
 import Planning from './pages/Planning'
 import Profil from './pages/Profil'
 import Sidebar from './components/Sidebar'
@@ -118,9 +117,7 @@ function AppContent() {
         {activePage === 'resultats'        && <Resultats />}
         {activePage === 'presentation'     && <NotreEntreprise />}
         {activePage === 'administration'   && <Administration />}
-        {activePage === 'pointage'         && <Pointage onNavigate={handleNavigate} />}
         {activePage === 'planning'         && <Planning />}
-        {/* ✅ Page profil */}
         {activePage === 'profil'           && <Profil />}
       </main>
 

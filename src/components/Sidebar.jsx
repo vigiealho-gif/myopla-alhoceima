@@ -21,7 +21,6 @@ export default function Sidebar({ activePage, onNavigate }) {
   useEffect(() => {
     if (!user) return
     const lastSeen = localStorage.getItem(`lastSeen_${user.uid}`) || 0
-
     const unsubC = onValue(ref(db, 'consignes'), (snap) => {
       const data = snap.val()
       if (data) {
@@ -75,7 +74,6 @@ export default function Sidebar({ activePage, onNavigate }) {
     if (!searchQuery.trim()) { setSearchResults([]); setShowResults(false); return }
     const q = searchQuery.toLowerCase()
     const results = []
-
     allData.consignes.forEach(c => {
       if (c.titre?.toLowerCase().includes(q) || c.contenu?.toLowerCase().includes(q))
         results.push({ id: c.id, icon: '📋', titre: c.titre, extrait: c.contenu?.slice(0, 70), page: 'consignes', couleur: 'text-blue-600', bg: 'bg-blue-50' })
@@ -90,17 +88,12 @@ export default function Sidebar({ activePage, onNavigate }) {
     })
     allData.membres.forEach(m => {
       if (m.nom?.toLowerCase().includes(q))
-        results.push({
-          id: m.id, icon: '👤', titre: m.nom, extrait: getRoleLabel(m.role, m.titre),
-          page: 'messagerie', couleur: 'text-purple-600', bg: 'bg-purple-50',
-          membreData: m
-        })
+        results.push({ id: m.id, icon: '👤', titre: m.nom, extrait: getRoleLabel(m.role, m.titre), page: 'messagerie', couleur: 'text-purple-600', bg: 'bg-purple-50', membreData: m })
     })
     allData.plannings.forEach(p => {
       if (p.titre?.toLowerCase().includes(q) || p.semaine?.toLowerCase().includes(q))
         results.push({ id: p.id, icon: '📅', titre: p.titre, extrait: p.semaine || '', page: 'planning', couleur: 'text-green-700', bg: 'bg-green-50' })
     })
-
     setSearchResults(results.slice(0, 8))
     setShowResults(true)
   }, [searchQuery, allData])
@@ -122,13 +115,9 @@ export default function Sidebar({ activePage, onNavigate }) {
   }
 
   const handleResultClick = (result) => {
-    setSearchQuery('')
-    setShowResults(false)
-    if (result.page === 'messagerie' && result.membreData) {
-      markAsSeen('messagerie', result.membreData)
-    } else {
-      markAsSeen(result.page)
-    }
+    setSearchQuery(''); setShowResults(false)
+    if (result.page === 'messagerie' && result.membreData) markAsSeen('messagerie', result.membreData)
+    else markAsSeen(result.page)
   }
 
   const markAsSeen = (page, membreToOpen = null) => {
@@ -143,14 +132,11 @@ export default function Sidebar({ activePage, onNavigate }) {
   }
 
   const handleLogout = async () => { await signOut(auth) }
-
   const getRoleColor = (role) => ({ directrice: 'text-amber-600', superviseure: 'text-purple-600', vigie: 'text-indigo-600', formateur: 'text-teal-600' }[role] || 'text-blue-600')
-
   const getRoleLabel = (role, titre) => {
     if (titre) return titre
     return { directrice: 'Directrice', superviseure: 'Superviseure', vigie: 'Vigie', formateur: 'Formateur' }[role] || 'Agent'
   }
-
   const getInitials = (name) => { if (!name) return '?'; return name.split(' ').map(w => w[0]).join('').toUpperCase() }
   const getAvatarColor = (role) => ({ directrice: 'bg-amber-500', superviseure: 'bg-purple-600', vigie: 'bg-indigo-500', formateur: 'bg-teal-500' }[role] || 'bg-blue-600')
 
@@ -168,9 +154,6 @@ export default function Sidebar({ activePage, onNavigate }) {
     { id: 'consignes',        icon: '📋', label: 'Consignes',        badge: newConsignes },
     { id: 'planning',         icon: '📅', label: 'Planning',         badge: newPlannings },
     { id: 'resultats',        icon: '📊', label: 'Résultats',        badge: 0            },
-  ]
-  const menuItemsRH = [
-    { id: 'pointage', icon: '⏱️', label: 'Pointage', badge: 0 },
   ]
 
   const renderMenuItem = (item) => (
@@ -190,8 +173,6 @@ export default function Sidebar({ activePage, onNavigate }) {
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-60 bg-white border-r border-gray-200 flex flex-col z-50 shadow-sm">
-
-      {/* Logo */}
       <div className="px-5 py-4 border-b border-gray-200">
         <div className="flex items-center gap-3">
           <img src={logo} alt="Myopla" className="h-8 object-contain" />
@@ -202,7 +183,6 @@ export default function Sidebar({ activePage, onNavigate }) {
         </div>
       </div>
 
-      {/* Recherche */}
       <div className="px-3 py-3 border-b border-gray-100 relative" ref={searchRef}>
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
@@ -216,8 +196,7 @@ export default function Sidebar({ activePage, onNavigate }) {
           )}
         </div>
         {showResults && (
-          <div className="absolute left-3 right-3 top-full mt-1 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden"
-            style={{ maxHeight: '320px', overflowY: 'auto' }}>
+          <div className="absolute left-3 right-3 top-full mt-1 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden" style={{ maxHeight: '320px', overflowY: 'auto' }}>
             {searchResults.length === 0 ? (
               <div className="px-4 py-6 text-center text-gray-400 text-sm">
                 <div className="text-2xl mb-1">🔍</div>
@@ -245,7 +224,6 @@ export default function Sidebar({ activePage, onNavigate }) {
         )}
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
         <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2">Principal</div>
         {menuItemsMain.map(renderMenuItem)}
@@ -255,9 +233,6 @@ export default function Sidebar({ activePage, onNavigate }) {
 
         <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2 mt-4">Contenu</div>
         {menuItemsContenu.map(renderMenuItem)}
-
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2 mt-4">RH</div>
-        {menuItemsRH.map(renderMenuItem)}
 
         {['directrice', 'superviseure'].includes(userData?.role) && (
           <>
@@ -271,9 +246,7 @@ export default function Sidebar({ activePage, onNavigate }) {
         )}
       </nav>
 
-      {/* Profil */}
       <div className="px-4 py-4 border-t border-gray-200">
-        {/* ✅ Cliquable pour aller sur la page profil */}
         <button onClick={() => onNavigate('profil')}
           className={`w-full flex items-center gap-3 mb-3 p-2 rounded-xl transition hover:bg-gray-50 ${activePage === 'profil' ? 'bg-blue-50' : ''}`}>
           {userData?.photoURL ? (
