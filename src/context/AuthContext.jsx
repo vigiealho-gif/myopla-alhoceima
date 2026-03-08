@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
-import { ref, get, onValue, set, onDisconnect, serverTimestamp } from 'firebase/database'
+import { ref, onValue, set, onDisconnect, serverTimestamp } from 'firebase/database'
 import { auth, db } from '../firebase'
 
 const AuthContext = createContext()
@@ -11,42 +11,42 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubUserData = null
+
+    const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Arrêter l'écoute précédente si elle existe
+      if (unsubUserData) { unsubUserData(); unsubUserData = null }
+
       if (firebaseUser) {
         setUser(firebaseUser)
-        try {
-          const userRef = ref(db, 'users/' + firebaseUser.uid)
-          const snapshot = await get(userRef)
+
+        // ✅ onValue = écoute en temps réel → photo, nom, titre se mettent à jour instantanément
+        const userRef = ref(db, 'users/' + firebaseUser.uid)
+        unsubUserData = onValue(userRef, (snapshot) => {
           if (snapshot.exists()) {
             setUserData(snapshot.val())
           } else {
             setUserData(null)
           }
-        } catch (error) {
-          console.error('Erreur:', error)
-        }
+          setLoading(false)
+        })
 
-        // ✅ Marquer l'utilisateur comme EN LIGNE
+        // Présence en ligne
         const presenceRef = ref(db, `presence/${firebaseUser.uid}`)
-        await set(presenceRef, {
-          online: true,
-          lastSeen: serverTimestamp()
-        })
-
-        // ✅ Quand l'utilisateur se déconnecte (ferme l'onglet, perd internet...)
-        // Firebase met automatiquement online: false
-        onDisconnect(presenceRef).set({
-          online: false,
-          lastSeen: serverTimestamp()
-        })
+        await set(presenceRef, { online: true, lastSeen: serverTimestamp() })
+        onDisconnect(presenceRef).set({ online: false, lastSeen: serverTimestamp() })
 
       } else {
         setUser(null)
         setUserData(null)
+        setLoading(false)
       }
-      setLoading(false)
     })
-    return unsubscribe
+
+    return () => {
+      unsubAuth()
+      if (unsubUserData) unsubUserData()
+    }
   }, [])
 
   return (

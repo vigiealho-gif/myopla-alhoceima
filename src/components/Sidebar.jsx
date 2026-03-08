@@ -146,7 +146,6 @@ export default function Sidebar({ activePage, onNavigate }) {
 
   const getRoleColor = (role) => ({ directrice: 'text-amber-600', superviseure: 'text-purple-600', vigie: 'text-indigo-600', formateur: 'text-teal-600' }[role] || 'text-blue-600')
 
-  // ✅ Si l'utilisateur a un titre personnalisé, l'afficher à la place du rôle
   const getRoleLabel = (role, titre) => {
     if (titre) return titre
     return { directrice: 'Directrice', superviseure: 'Superviseure', vigie: 'Vigie', formateur: 'Formateur' }[role] || 'Agent'
@@ -274,16 +273,22 @@ export default function Sidebar({ activePage, onNavigate }) {
 
       {/* Profil */}
       <div className="px-4 py-4 border-t border-gray-200">
-        <div className="flex items-center gap-3 mb-3">
-          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold ${getAvatarColor(userData?.role)}`}>
-            {getInitials(userData?.nom)}
-          </div>
-          <div className="flex-1 min-w-0">
+        {/* ✅ Cliquable pour aller sur la page profil */}
+        <button onClick={() => onNavigate('profil')}
+          className={`w-full flex items-center gap-3 mb-3 p-2 rounded-xl transition hover:bg-gray-50 ${activePage === 'profil' ? 'bg-blue-50' : ''}`}>
+          {userData?.photoURL ? (
+            <img src={userData.photoURL} alt="profil" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+          ) : (
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold ${getAvatarColor(userData?.role)} flex-shrink-0`}>
+              {getInitials(userData?.nom)}
+            </div>
+          )}
+          <div className="flex-1 min-w-0 text-left">
             <div className="text-sm font-semibold text-gray-800 truncate">{userData?.nom || 'Utilisateur'}</div>
-            {/* ✅ Affiche le titre personnalisé si disponible */}
             <div className={`text-xs font-medium ${getRoleColor(userData?.role)}`}>{getRoleLabel(userData?.role, userData?.titre)}</div>
           </div>
-        </div>
+          <span className="text-gray-300 text-sm">›</span>
+        </button>
         <button onClick={handleLogout} className="w-full text-xs text-gray-400 hover:text-red-500 transition text-left">🚪 Se déconnecter</button>
       </div>
     </aside>

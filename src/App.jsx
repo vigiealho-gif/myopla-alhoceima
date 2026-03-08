@@ -14,12 +14,12 @@ import NotreEntreprise from './pages/NotreEntreprise'
 import Administration from './pages/Administration'
 import Pointage from './pages/Pointage'
 import Planning from './pages/Planning'
+import Profil from './pages/Profil'
 import Sidebar from './components/Sidebar'
 
 function AppContent() {
   const { user, userData } = useAuth()
   const [activePage, setActivePage] = useState('dashboard')
-  // ✅ Membre à ouvrir directement dans MessageriePrive (depuis la recherche)
   const [openMembre, setOpenMembre] = useState(null)
   const [notification, setNotification] = useState(null)
   const notifTimeout = useRef(null)
@@ -98,11 +98,9 @@ function AppContent() {
     notifTimeout.current = setTimeout(() => setNotification(null), 5000)
   }
 
-  // ✅ handleNavigate reçoit (page, membreToOpen)
-  // Sidebar appelle onNavigate(page, membreData) quand on clique sur un membre dans la recherche
   const handleNavigate = (page, membreToOpen = null) => {
     setActivePage(page)
-    setOpenMembre(membreToOpen) // null si navigation normale, objet membre si depuis recherche
+    setOpenMembre(membreToOpen)
   }
 
   if (!user) return <Login />
@@ -113,7 +111,6 @@ function AppContent() {
       <main className="ml-60 flex-1">
         {activePage === 'dashboard'        && <Dashboard onNavigate={handleNavigate} />}
         {activePage === 'groupe'           && <ChatGroupe />}
-        {/* ✅ On passe initialMembre à MessageriePrive pour ouvrir directement la conversation */}
         {activePage === 'messagerie'       && <MessageriePrive initialMembre={openMembre} />}
         {activePage === 'actualites'       && <Actualites />}
         {activePage === 'consignes'        && <Consignes />}
@@ -123,6 +120,8 @@ function AppContent() {
         {activePage === 'administration'   && <Administration />}
         {activePage === 'pointage'         && <Pointage onNavigate={handleNavigate} />}
         {activePage === 'planning'         && <Planning />}
+        {/* ✅ Page profil */}
+        {activePage === 'profil'           && <Profil />}
       </main>
 
       {notification && (
