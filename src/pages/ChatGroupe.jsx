@@ -26,7 +26,7 @@ function MessageText({ texte }) {
 
 export default function ChatGroupe() {
   const { user, userData } = useAuth()
-  const { sendNotification } = useNotification()
+  const { sendNotification, requestPermission } = useNotification()
 
   const [messages, setMessages] = useState([])
   const [newMessage, setNewMessage] = useState('')
@@ -40,10 +40,7 @@ export default function ChatGroupe() {
   const [notification, setNotification] = useState(null)
   const [unreadCount, setUnreadCount] = useState(0)
   const [reactionPopup, setReactionPopup] = useState(null)
-
-  // ✅ Popup "vu par" : msgId ou null
   const [vuPopupId, setVuPopupId] = useState(null)
-
   const [showMentions, setShowMentions] = useState(false)
   const [mentionSuggestions, setMentionSuggestions] = useState([])
   const [cursorPos, setCursorPos] = useState(0)
@@ -54,8 +51,12 @@ export default function ChatGroupe() {
   const isInitialLoad = useRef(true)
   const lastMessageCount = useRef(0)
   const notifTimeout = useRef(null)
-  // Pour ne pas re-marquer à chaque render
   const markedAsRead = useRef(new Set())
+
+  // ✅ CORRECTION : passer user.uid pour sauvegarder le token FCM dans Firebase
+  useEffect(() => {
+    if (user?.uid) requestPermission(user.uid)
+  }, [user?.uid])
 
   useEffect(() => {
     const usersRef = ref(db, 'users')
@@ -85,6 +86,8 @@ export default function ChatGroupe() {
             setUnreadCount(prev => prev + 1)
             if (notifTimeout.current) clearTimeout(notifTimeout.current)
             notifTimeout.current = setTimeout(() => setNotification(null), 5000)
+
+            // Son
             try {
               const ctx = new (window.AudioContext || window.webkitAudioContext)()
               const o = ctx.createOscillator(); const g = ctx.createGain()
@@ -94,13 +97,27 @@ export default function ChatGroupe() {
               g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
               o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
             } catch (e) {}
+
+            // ✅ Notification système — visible même sur autre onglet
+            sendNotification({
+              title: `💬 ${newMsg.nom}`,
+              body: newMsg.imageUrl ? '📷 Photo' : newMsg.texte,
+              icon: '/favicon.ico',
+              tag: `chat-groupe-${newMsg.nom}`
+            })
+
+            // Mention spécifique
             if (newMsg.texte?.includes(`@${userData?.nom}`)) {
-              sendNotification({ title: `🔔 ${newMsg.nom} vous a mentionné`, body: newMsg.texte, icon: '/favicon.ico', tag: `mention-${newMsg.nom}` })
+              sendNotification({
+                title: `🔔 ${newMsg.nom} vous a mentionné`,
+                body: newMsg.texte,
+                icon: '/favicon.ico',
+                tag: `mention-${newMsg.nom}`
+              })
             }
           }
         }
 
-        // ✅ Marquer les messages des autres comme vus (une seule fois par message)
         messagesList.forEach(msg => {
           if (msg.nom !== userData?.nom && !msg.vus?.[user.uid] && !markedAsRead.current.has(msg.id)) {
             markedAsRead.current.add(msg.id)
@@ -123,15 +140,14 @@ export default function ChatGroupe() {
   }, [userData?.nom, user?.uid])
 
   useEffect(() => {
-    if (Notification.permission === 'default') Notification.requestPermission()
-  }, [])
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
   useEffect(() => {
-    const handleClick = () => { setMenuId(null); setEmojiPickerId(null); setShowMentions(false); setReactionPopup(null); setVuPopupId(null) }
+    const handleClick = () => {
+      setMenuId(null); setEmojiPickerId(null); setShowMentions(false)
+      setReactionPopup(null); setVuPopupId(null)
+    }
     document.addEventListener('click', handleClick)
     return () => document.removeEventListener('click', handleClick)
   }, [])
@@ -207,11 +223,10 @@ export default function ChatGroupe() {
       .filter(r => r.count > 0)
   }
 
-  // ✅ Récupérer la liste des personnes qui ont vu (hors expéditeur)
   const getVuList = (msg) => {
     if (!msg.vus) return []
     return Object.values(msg.vus)
-      .filter(v => v.nom !== msg.nom) // exclure l'expéditeur
+      .filter(v => v.nom !== msg.nom)
       .sort((a, b) => a.vu_le - b.vu_le)
   }
 
@@ -221,7 +236,6 @@ export default function ChatGroupe() {
     await push(ref(db, 'chat_groupe'), {
       texte: newMessage.trim(), nom: userData?.nom, role: userData?.role,
       timestamp: serverTimestamp(),
-      // ✅ L'expéditeur marque automatiquement comme vu
       vus: { [user.uid]: { nom: userData?.nom, role: userData?.role, vu_le: Date.now() } }
     })
     setNewMessage('')
@@ -480,22 +494,16 @@ export default function ChatGroupe() {
                     </div>
                   </div>
 
-                  {/* ✅ Heure + compteur 👁 vu */}
                   <div className={`flex items-center gap-2 mt-1 ${isMyMessage(msg) ? 'justify-end' : 'justify-start'}`}>
                     <span className="text-xs text-gray-400">{formatTime(msg.timestamp)}</span>
-
-                    {/* Compteur 👁 — visible pour tout le monde */}
                     {vuCount > 0 && (
                       <div className="relative">
                         <button
                           onClick={(e) => { e.stopPropagation(); setVuPopupId(vuPopupId === msg.id ? null : msg.id) }}
                           className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-blue-500 transition"
                         >
-                          <span>👁</span>
-                          <span className="font-medium">{vuCount}</span>
+                          <span>👁</span><span className="font-medium">{vuCount}</span>
                         </button>
-
-                        {/* ✅ Popup liste des personnes qui ont vu */}
                         {vuPopupId === msg.id && (
                           <div
                             className={`absolute bottom-full mb-2 z-50 bg-gray-900 text-white rounded-xl shadow-xl px-3 py-3 min-w-48 ${isMyMessage(msg) ? 'right-0' : 'left-0'}`}
@@ -510,9 +518,7 @@ export default function ChatGroupe() {
                                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${getAvatarColor(v.role)}`}>
                                       {getInitials(v.nom)}
                                     </div>
-                                    <span className="text-xs text-white whitespace-nowrap">
-                                      {v.nom === userData?.nom ? 'Vous' : v.nom}
-                                    </span>
+                                    <span className="text-xs text-white whitespace-nowrap">{v.nom === userData?.nom ? 'Vous' : v.nom}</span>
                                   </div>
                                   <span className="text-xs text-gray-400 whitespace-nowrap">{formatVuTime(v.vu_le)}</span>
                                 </div>
@@ -524,7 +530,6 @@ export default function ChatGroupe() {
                       </div>
                     )}
                   </div>
-
                 </div>
               </div>
             </div>

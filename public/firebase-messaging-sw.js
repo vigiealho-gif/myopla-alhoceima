@@ -1,5 +1,6 @@
-// public/sw.js
-// Service Worker Myopla — Firebase Cloud Messaging
+// ✅ CE FICHIER DOIT S'APPELER EXACTEMENT : firebase-messaging-sw.js
+// ✅ ET DOIT ÊTRE DANS LE DOSSIER : public/
+// Firebase cherche CE nom précis pour les notifications en arrière-plan
 
 importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js')
 importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js')
@@ -16,12 +17,14 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging()
 
-// ✅ Notifications en arrière-plan (app minimisée ou onglet inactif)
+// ✅ Notifications en arrière-plan (onglet inactif / autre fenêtre)
 messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title || payload.data?.title || 'Myopla'
+  console.log('[SW] Message en background reçu:', payload)
+
+  const title = payload.notification?.title || payload.data?.title || 'CallConnect'
   const body  = payload.notification?.body  || payload.data?.body  || ''
   const icon  = payload.notification?.icon  || payload.data?.icon  || '/favicon.ico'
-  const tag   = payload.data?.tag || 'notif-myopla'
+  const tag   = payload.data?.tag || 'notif-callconnect'
 
   self.registration.showNotification(title, {
     body,
@@ -31,11 +34,10 @@ messaging.onBackgroundMessage((payload) => {
     renotify: true,
     requireInteraction: false,
     vibrate: [200, 100, 200],
-    data: { url: '/' }
+    data: { url: self.location.origin }
   })
 })
 
-// Lifecycle
 self.addEventListener('install',  () => self.skipWaiting())
 self.addEventListener('activate', (e) => e.waitUntil(clients.claim()))
 
@@ -52,21 +54,4 @@ self.addEventListener('notificationclick', (event) => {
       if (clients.openWindow) return clients.openWindow('/')
     })
   )
-})
-
-// ✅ Fallback postMessage (quand app active)
-self.addEventListener('message', (event) => {
-  if (event.data?.type === 'SHOW_NOTIFICATION') {
-    const { title, body, icon, tag } = event.data.payload
-    event.waitUntil(
-      self.registration.showNotification(title, {
-        body: body || '',
-        icon: icon || '/favicon.ico',
-        badge: '/favicon.ico',
-        tag: tag || 'notif-myopla',
-        renotify: true,
-        vibrate: [200, 100, 200],
-      })
-    )
-  }
 })

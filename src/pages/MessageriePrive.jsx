@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ref, push, onValue, serverTimestamp, set, update, remove } from 'firebase/database'
+import { ref, push, onValue, serverTimestamp, update, remove } from 'firebase/database'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '../firebase'
 import { useAuth } from '../context/AuthContext'
@@ -36,7 +36,10 @@ export default function MessageriePrive() {
 
   const getConvId = (uid1, uid2) => [uid1, uid2].sort().join('_')
 
-  useEffect(() => { requestPermission() }, [])
+  // ✅ CORRECTION : passer user.uid pour sauvegarder le token FCM dans Firebase
+  useEffect(() => {
+    if (user?.uid) requestPermission(user.uid)
+  }, [user?.uid])
 
   useEffect(() => {
     const usersRef = ref(db, 'users')
@@ -68,6 +71,8 @@ export default function MessageriePrive() {
               setNotification({ ...lastMsg, senderNom: lastMsg.senderNom || membre.nom, senderRole: lastMsg.senderRole || membre.role })
               if (notifTimeout.current) clearTimeout(notifTimeout.current)
               notifTimeout.current = setTimeout(() => setNotification(null), 5000)
+
+              // Son
               try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)()
                 const o = ctx.createOscillator(); const g = ctx.createGain()
@@ -77,6 +82,8 @@ export default function MessageriePrive() {
                 g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
                 o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
               } catch (e) {}
+
+              // ✅ Notification système — visible même sur autre onglet
               sendNotification({
                 title: `✉️ Message privé de ${lastMsg.senderNom || membre.nom}`,
                 body: lastMsg.imageUrl ? '📷 Photo' : lastMsg.texte,
@@ -281,7 +288,6 @@ export default function MessageriePrive() {
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   }
 
-  // ✅ Tri par dernier message — le plus récent en premier
   const membresFiltrés = membres
     .filter(m => {
       if (userData?.role === 'directrice') return true
@@ -292,9 +298,7 @@ export default function MessageriePrive() {
     .sort((a, b) => {
       const aTime = lastMessages[a.id]?.timestamp || 0
       const bTime = lastMessages[b.id]?.timestamp || 0
-      // ✅ Priorité 1 : dernier message le plus récent
       if (bTime !== aTime) return bTime - aTime
-      // ✅ Priorité 2 : en ligne en premier si pas de messages
       const aOnline = isOnline(a.id) ? 1 : 0
       const bOnline = isOnline(b.id) ? 1 : 0
       return bOnline - aOnline
@@ -407,7 +411,7 @@ export default function MessageriePrive() {
           </div>
         ) : (
           <>
-            {/* Header conversation */}
+            {/* Header */}
             <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3">
               <div className="relative">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ${getAvatarColor(selectedMembre.role)}`}>
@@ -453,7 +457,6 @@ export default function MessageriePrive() {
                             onClick={(e) => { e.stopPropagation(); setEmojiPickerId(emojiPickerId === msg.id ? null : msg.id); setMenuId(null) }}
                             className="opacity-0 group-hover:opacity-100 transition text-lg mb-1 hover:scale-110"
                           >😊</button>
-
                           {emojiPickerId === msg.id && (
                             <div className={`absolute bottom-8 z-30 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 flex gap-1 ${isMe ? 'right-0' : 'left-0'}`}
                               style={{ animation: 'emojiPop 0.15s ease' }}
