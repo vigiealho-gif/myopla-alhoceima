@@ -90,9 +90,8 @@ export default function Sidebar({ activePage, onNavigate }) {
     })
     allData.membres.forEach(m => {
       if (m.nom?.toLowerCase().includes(q))
-        // ✅ membreData contient tout l'objet pour ouvrir la conversation directement
         results.push({
-          id: m.id, icon: '👤', titre: m.nom, extrait: getRoleLabel(m.role),
+          id: m.id, icon: '👤', titre: m.nom, extrait: getRoleLabel(m.role, m.titre),
           page: 'messagerie', couleur: 'text-purple-600', bg: 'bg-purple-50',
           membreData: m
         })
@@ -125,7 +124,6 @@ export default function Sidebar({ activePage, onNavigate }) {
   const handleResultClick = (result) => {
     setSearchQuery('')
     setShowResults(false)
-    // ✅ Si membre → passe membreData à onNavigate pour ouvrir la conversation
     if (result.page === 'messagerie' && result.membreData) {
       markAsSeen('messagerie', result.membreData)
     } else {
@@ -133,8 +131,6 @@ export default function Sidebar({ activePage, onNavigate }) {
     }
   }
 
-  // ✅ onNavigate reçoit maintenant (page, membreToOpen)
-  // App.jsx doit passer ce membreToOpen à MessageriePrive via prop
   const markAsSeen = (page, membreToOpen = null) => {
     if (['consignes', 'bonnes-pratiques', 'planning'].includes(page) && user) {
       localStorage.setItem(`lastSeen_${user.uid}`, Date.now())
@@ -149,7 +145,13 @@ export default function Sidebar({ activePage, onNavigate }) {
   const handleLogout = async () => { await signOut(auth) }
 
   const getRoleColor = (role) => ({ directrice: 'text-amber-600', superviseure: 'text-purple-600', vigie: 'text-indigo-600', formateur: 'text-teal-600' }[role] || 'text-blue-600')
-  const getRoleLabel = (role) => ({ directrice: 'Directrice', superviseure: 'Superviseure', vigie: 'Vigie', formateur: 'Formateur' }[role] || 'Agent')
+
+  // ✅ Si l'utilisateur a un titre personnalisé, l'afficher à la place du rôle
+  const getRoleLabel = (role, titre) => {
+    if (titre) return titre
+    return { directrice: 'Directrice', superviseure: 'Superviseure', vigie: 'Vigie', formateur: 'Formateur' }[role] || 'Agent'
+  }
+
   const getInitials = (name) => { if (!name) return '?'; return name.split(' ').map(w => w[0]).join('').toUpperCase() }
   const getAvatarColor = (role) => ({ directrice: 'bg-amber-500', superviseure: 'bg-purple-600', vigie: 'bg-indigo-500', formateur: 'bg-teal-500' }[role] || 'bg-blue-600')
 
@@ -278,7 +280,8 @@ export default function Sidebar({ activePage, onNavigate }) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-gray-800 truncate">{userData?.nom || 'Utilisateur'}</div>
-            <div className={`text-xs font-medium ${getRoleColor(userData?.role)}`}>{getRoleLabel(userData?.role)}</div>
+            {/* ✅ Affiche le titre personnalisé si disponible */}
+            <div className={`text-xs font-medium ${getRoleColor(userData?.role)}`}>{getRoleLabel(userData?.role, userData?.titre)}</div>
           </div>
         </div>
         <button onClick={handleLogout} className="w-full text-xs text-gray-400 hover:text-red-500 transition text-left">🚪 Se déconnecter</button>

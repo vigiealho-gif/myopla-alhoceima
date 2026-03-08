@@ -22,7 +22,6 @@ function formatDur(ms) {
   return h > 0 ? `${h}h${min > 0 ? min + 'min' : ''}` : `${min}min`
 }
 
-// ── Modal lecture complète ──
 function ModalLecture({ item, type, onClose }) {
   if (!item) return null
 
@@ -50,8 +49,6 @@ function ModalLecture({ item, type, onClose }) {
       onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
         onClick={e => e.stopPropagation()}>
-
-        {/* Header */}
         <div className="px-6 py-5 border-b border-gray-100 flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -68,28 +65,20 @@ function ModalLecture({ item, type, onClose }) {
               {item.timestamp && <span> · {formatDateFull(item.timestamp)}</span>}
             </div>
           </div>
-          <button onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl leading-none flex-shrink-0 mt-1">×</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none flex-shrink-0 mt-1">×</button>
         </div>
-
-        {/* Contenu */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
             {item.contenu || item.description || 'Aucun contenu disponible.'}
           </div>
-
-          {/* Image si présente */}
           {item.imageUrl && (
             <div className="mt-4 rounded-xl overflow-hidden">
               <img src={item.imageUrl} alt="illustration" className="w-full object-cover" />
             </div>
           )}
         </div>
-
-        {/* Footer */}
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
-          <button onClick={onClose}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl text-sm font-medium transition">
+          <button onClick={onClose} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl text-sm font-medium transition">
             Fermer
           </button>
         </div>
@@ -107,8 +96,6 @@ export default function Dashboard({ onNavigate }) {
   const [time, setTime] = useState(new Date())
   const [pointage, setPointage] = useState(null)
   const [shift, setShift] = useState(null)
-
-  // ── Modal ──
   const [modalItem, setModalItem] = useState(null)
   const [modalType, setModalType] = useState(null)
 
@@ -159,7 +146,6 @@ export default function Dashboard({ onNavigate }) {
       .then(r => r.json()).then(d => setMeteo(d.current_weather)).catch(() => setMeteo(null))
   }, [])
 
-  // ── Pointage rapide ──
   const handleArrivee = () => set(ref(db, `pointages/${user.uid}/${todayKey}`), {
     arrivee: Date.now(), nom: userData?.nom, role: userData?.role, pauses: {}, fin: null
   })
@@ -220,7 +206,12 @@ export default function Dashboard({ onNavigate }) {
 
   const getPrioStyle = p => ({ 'Haute': 'bg-red-100 text-red-600', 'Normale': 'bg-blue-100 text-blue-600' }[p] || 'bg-gray-100 text-gray-600')
   const fmtDate = ts => ts ? new Date(ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : ''
-  const getRoleLabel = r => ({ directrice: 'Directrice', superviseure: 'Superviseure', vigie: 'Vigie', formateur: 'Formateur' }[r] || 'Agent')
+
+  // ✅ Affiche le titre personnalisé si disponible
+  const getRoleLabel = (r, titre) => {
+    if (titre) return titre
+    return { directrice: 'Directrice', superviseure: 'Superviseure', vigie: 'Vigie', formateur: 'Formateur' }[r] || 'Agent'
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -239,7 +230,8 @@ export default function Dashboard({ onNavigate }) {
                 <span className="text-white text-opacity-60 text-sm font-light tracking-widest uppercase">Al Hoceima • Rif</span>
               </div>
               <h1 className="text-3xl font-bold text-white mb-1">Bonjour, {userData?.nom?.split(' ')[0]} 👋</h1>
-              <p className="text-blue-200 text-sm">{getRoleLabel(userData?.role)} — Myopla Al Hoceima</p>
+              {/* ✅ Affiche le titre personnalisé si disponible */}
+              <p className="text-blue-200 text-sm">{getRoleLabel(userData?.role, userData?.titre)} — Myopla Al Hoceima</p>
               <div className="mt-4">
                 <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-xl px-4 py-2 inline-block border border-white border-opacity-10">
                   <div className="text-white text-xl font-bold tracking-wider">
@@ -329,7 +321,7 @@ export default function Dashboard({ onNavigate }) {
 
         <div className="grid grid-cols-3 gap-6">
 
-          {/* ✅ Actualités — cliquables avec modal */}
+          {/* Actualités */}
           <div className="col-span-2 bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
               <h2 className="font-bold text-gray-800">📰 Dernières Actualités</h2>
@@ -361,7 +353,7 @@ export default function Dashboard({ onNavigate }) {
             </div>
           </div>
 
-          {/* ✅ Consignes — cliquables avec modal */}
+          {/* Consignes */}
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
               <h2 className="font-bold text-gray-800 text-sm">📋 Consignes Récentes</h2>
@@ -405,7 +397,6 @@ export default function Dashboard({ onNavigate }) {
         </div>
       </div>
 
-      {/* ✅ Modal lecture complète */}
       {modalItem && (
         <ModalLecture
           item={modalItem}

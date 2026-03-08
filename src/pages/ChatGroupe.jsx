@@ -53,7 +53,6 @@ export default function ChatGroupe() {
   const notifTimeout = useRef(null)
   const markedAsRead = useRef(new Set())
 
-  // ✅ CORRECTION : passer user.uid pour sauvegarder le token FCM dans Firebase
   useEffect(() => {
     if (user?.uid) requestPermission(user.uid)
   }, [user?.uid])
@@ -86,8 +85,6 @@ export default function ChatGroupe() {
             setUnreadCount(prev => prev + 1)
             if (notifTimeout.current) clearTimeout(notifTimeout.current)
             notifTimeout.current = setTimeout(() => setNotification(null), 5000)
-
-            // Son
             try {
               const ctx = new (window.AudioContext || window.webkitAudioContext)()
               const o = ctx.createOscillator(); const g = ctx.createGain()
@@ -97,16 +94,12 @@ export default function ChatGroupe() {
               g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
               o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
             } catch (e) {}
-
-            // ✅ Notification système — visible même sur autre onglet
             sendNotification({
               title: `💬 ${newMsg.nom}`,
               body: newMsg.imageUrl ? '📷 Photo' : newMsg.texte,
               icon: '/favicon.ico',
               tag: `chat-groupe-${newMsg.nom}`
             })
-
-            // Mention spécifique
             if (newMsg.texte?.includes(`@${userData?.nom}`)) {
               sendNotification({
                 title: `🔔 ${newMsg.nom} vous a mentionné`,
@@ -225,9 +218,7 @@ export default function ChatGroupe() {
 
   const getVuList = (msg) => {
     if (!msg.vus) return []
-    return Object.values(msg.vus)
-      .filter(v => v.nom !== msg.nom)
-      .sort((a, b) => a.vu_le - b.vu_le)
+    return Object.values(msg.vus).filter(v => v.nom !== msg.nom).sort((a, b) => a.vu_le - b.vu_le)
   }
 
   const sendMessage = async (e) => {
@@ -235,6 +226,7 @@ export default function ChatGroupe() {
     if (!newMessage.trim()) return
     await push(ref(db, 'chat_groupe'), {
       texte: newMessage.trim(), nom: userData?.nom, role: userData?.role,
+      titre: userData?.titre || null,
       timestamp: serverTimestamp(),
       vus: { [user.uid]: { nom: userData?.nom, role: userData?.role, vu_le: Date.now() } }
     })
@@ -251,6 +243,7 @@ export default function ChatGroupe() {
       const url = await getDownloadURL(fileRef)
       await push(ref(db, 'chat_groupe'), {
         texte: '', imageUrl: url, nom: userData?.nom, role: userData?.role,
+        titre: userData?.titre || null,
         timestamp: serverTimestamp(),
         vus: { [user.uid]: { nom: userData?.nom, role: userData?.role, vu_le: Date.now() } }
       })
@@ -315,7 +308,9 @@ export default function ChatGroupe() {
     if (isSupOrEquivalent(role)) return 'bg-purple-600'
     return 'bg-blue-600'
   }
-  const getRoleLabel = (role) => {
+  // ✅ Affiche le titre personnalisé si disponible
+  const getRoleLabel = (role, titre) => {
+    if (titre) return titre
     switch (role) {
       case 'directrice': return 'Directrice'
       case 'superviseure': return 'Superviseure'
@@ -355,7 +350,7 @@ export default function ChatGroupe() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-bold text-gray-800 truncate">{notification.nom}</span>
-              <span className={`text-xs font-medium ${getRoleColor(notification.role)}`}>{getRoleLabel(notification.role)}</span>
+              <span className={`text-xs font-medium ${getRoleColor(notification.role)}`}>{getRoleLabel(notification.role, notification.titre)}</span>
             </div>
             <p className="text-sm text-gray-600 mt-0.5 truncate">{notification.imageUrl ? '📷 Photo' : notification.texte}</p>
           </div>
@@ -397,7 +392,8 @@ export default function ChatGroupe() {
                 <div className={`max-w-xs lg:max-w-md ${isMyMessage(msg) ? 'items-end' : 'items-start'} flex flex-col`}>
                   <div className={`flex items-center gap-2 mb-1 ${isMyMessage(msg) ? 'flex-row-reverse' : ''}`}>
                     <span className="text-sm font-semibold text-gray-700">{msg.nom}</span>
-                    <span className={`text-xs font-medium ${getRoleColor(msg.role)}`}>{getRoleLabel(msg.role)}</span>
+                    {/* ✅ Affiche le titre personnalisé si disponible */}
+                    <span className={`text-xs font-medium ${getRoleColor(msg.role)}`}>{getRoleLabel(msg.role, msg.titre)}</span>
                   </div>
 
                   <div className={`relative group flex items-end gap-1 ${isMyMessage(msg) ? 'flex-row-reverse' : ''}`}>
@@ -446,7 +442,6 @@ export default function ChatGroupe() {
                                 {msg.modifié && <span className="text-xs opacity-60 ml-1">(modifié)</span>}
                               </div>
                             )}
-
                             {isMyMessage(msg) && !msg.imageUrl && (
                               <div className="absolute -left-8 top-1">
                                 <button onClick={(e) => { e.stopPropagation(); setMenuId(menuId === msg.id ? null : msg.id); setEmojiPickerId(null) }}
@@ -462,7 +457,6 @@ export default function ChatGroupe() {
                               </div>
                             )}
                           </div>
-
                           {msg.reactions && getReactionSummary(msg.reactions).length > 0 && (
                             <div className={`flex flex-wrap gap-1 mt-1 ${isMyMessage(msg) ? 'justify-end' : 'justify-start'}`}>
                               {getReactionSummary(msg.reactions).map(({ emoji, count, hasReacted, names }) => (
@@ -498,18 +492,13 @@ export default function ChatGroupe() {
                     <span className="text-xs text-gray-400">{formatTime(msg.timestamp)}</span>
                     {vuCount > 0 && (
                       <div className="relative">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setVuPopupId(vuPopupId === msg.id ? null : msg.id) }}
-                          className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-blue-500 transition"
-                        >
+                        <button onClick={(e) => { e.stopPropagation(); setVuPopupId(vuPopupId === msg.id ? null : msg.id) }}
+                          className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-blue-500 transition">
                           <span>👁</span><span className="font-medium">{vuCount}</span>
                         </button>
                         {vuPopupId === msg.id && (
-                          <div
-                            className={`absolute bottom-full mb-2 z-50 bg-gray-900 text-white rounded-xl shadow-xl px-3 py-3 min-w-48 ${isMyMessage(msg) ? 'right-0' : 'left-0'}`}
-                            style={{ animation: 'vuPop 0.15s ease' }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
+                          <div className={`absolute bottom-full mb-2 z-50 bg-gray-900 text-white rounded-xl shadow-xl px-3 py-3 min-w-48 ${isMyMessage(msg) ? 'right-0' : 'left-0'}`}
+                            style={{ animation: 'vuPop 0.15s ease' }} onClick={(e) => e.stopPropagation()}>
                             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Vu par</div>
                             <div className="space-y-1.5">
                               {vuList.map((v, i) => (
@@ -562,19 +551,17 @@ export default function ChatGroupe() {
             {mentionSuggestions.map(membre => (
               <button key={membre.id} onClick={() => insertMention(membre)}
                 className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 transition text-left">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${
-                  membre.role === 'directrice' ? 'bg-amber-500' : membre.role === 'superviseure' ? 'bg-purple-600' :
-                  membre.role === 'vigie' ? 'bg-indigo-500' : membre.role === 'formateur' ? 'bg-teal-500' : 'bg-blue-600'
-                }`}>{getInitials(membre.nom)}</div>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${getAvatarColor(membre.role)}`}>
+                  {getInitials(membre.nom)}
+                </div>
                 <div>
                   <div className="text-sm font-semibold text-gray-800">{membre.nom}</div>
-                  <div className={`text-xs ${getRoleColor(membre.role)}`}>{getRoleLabel(membre.role)}</div>
+                  <div className={`text-xs ${getRoleColor(membre.role)}`}>{getRoleLabel(membre.role, membre.titre)}</div>
                 </div>
               </button>
             ))}
           </div>
         )}
-
         <form onSubmit={sendMessage} className="flex gap-3">
           <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
           <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 py-3 rounded-xl transition text-lg">📷</button>
