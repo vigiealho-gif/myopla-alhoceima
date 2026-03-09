@@ -23,26 +23,59 @@ function AppContent() {
   const [notification, setNotification] = useState(null)
   const notifTimeout = useRef(null)
   const initializedRef = useRef(false)
+  const tokenRefreshInterval = useRef(null)
+
+  // ✅ Fonction pour enregistrer/rafraichir le token FCM
+  const registerFCMToken = async () => {
+    if (!user) return
+    if (!('Notification' in window)) return
+    let permission = Notification.permission
+    if (permission === 'default') permission = await Notification.requestPermission()
+    if (permission !== 'granted') return
+    if (!('serviceWorker' in navigator)) return
+    try { await navigator.serviceWorker.register('/firebase-messaging-sw.js') } catch (e) {}
+    try {
+      const token = await getFCMToken()
+      if (token) {
+        await set(ref(db, `fcm_tokens/${user.uid}`), {
+          token,
+          nom: userData?.nom || '',
+          role: userData?.role || '',
+          updatedAt: Date.now()
+        })
+        console.log('Token FCM enregistre/rafraichi')
+      }
+    } catch (e) {
+      console.error('Erreur token FCM:', e)
+    }
+  }
 
   useEffect(() => {
     if (!user) return
-    const initFCM = async () => {
-      if (!('Notification' in window)) return
-      let permission = Notification.permission
-      if (permission === 'default') permission = await Notification.requestPermission()
-      if (permission !== 'granted') return
-      if (!('serviceWorker' in navigator)) return
-      try { await navigator.serviceWorker.register('/firebase-messaging-sw.js') } catch (e) {}
-      try {
-        const token = await getFCMToken()
-        if (token) {
-          await set(ref(db, `fcm_tokens/${user.uid}`), {
-            token, nom: userData?.nom || '', role: userData?.role || '', updatedAt: Date.now()
-          })
-        }
-      } catch (e) {}
+
+    // Enregistrer le token au demarrage
+    registerFCMToken()
+
+    // Rafraichir le token toutes les 30 minutes
+    tokenRefreshInterval.current = setInterval(() => {
+      registerFCMToken()
+    }, 30 * 60 * 1000)
+
+    return () => {
+      if (tokenRefreshInterval.current) clearInterval(tokenRefreshInterval.current)
     }
-    initFCM()
+  }, [user, userData?.nom])
+
+  // Rafraichir aussi quand la page redevient visible (retour sur l'onglet)
+  useEffect(() => {
+    if (!user) return
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        registerFCMToken()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [user, userData?.nom])
 
   useEffect(() => {
