@@ -1,118 +1,164 @@
-// functions/index.js
-const { onValueCreated } = require("firebase-functions/v2/database")
-const { initializeApp } = require("firebase-admin/app")
-const { getMessaging } = require("firebase-admin/messaging")
-const { getDatabase } = require("firebase-admin/database")
+const { onValueCreated } = require('firebase-functions/v2/database')
+const admin = require('firebase-admin')
+admin.initializeApp()
 
-initializeApp()
+const db = admin.database()
+const messaging = admin.messaging()
 
-// ─────────────────────────────────────────────
-// 🔔 Notification : nouveau message privé
-// ─────────────────────────────────────────────
-exports.notifyMessagePrive = onValueCreated(
-  {
-    ref: "/messages_prives/{convId}/{msgId}",
-    region: "us-central1",
-    database: "https://callconnect-b328a-default-rtdb.firebaseio.com",
-  },
+// Notification message PRIVE
+exports.notifierMessagePrive = onValueCreated(
+  '/messages_prives/{convId}/{msgId}',
   async (event) => {
     const msg = event.data.val()
-    if (!msg || !msg.senderId) return
+    if (!msg || !msg.senderId) return null
 
     const convId = event.params.convId
-    const uids = convId.split("_")
-    const receiverUid = uids.find((uid) => uid !== msg.senderId)
-    if (!receiverUid) return
+    const uids = convId.split('_')
+    const destinataireId = uids.find(uid => uid !== msg.senderId)
+    if (!destinataireId) return null
 
-    const db = getDatabase()
-    const tokenSnap = await db.ref(`fcm_tokens/${receiverUid}`).get()
-    if (!tokenSnap.exists()) return
+    const tokenSnap = await db.ref('fcm_tokens/' + destinataireId).once('value')
+    const tokenData = tokenSnap.val()
+    if (!tokenData || !tokenData.token) return null
 
-    const { token } = tokenSnap.val()
-    if (!token) return
+    const titre = 'Message de ' + (msg.senderNom || 'Quelquun')
+    const corps = msg.imageUrl ? 'Photo' : (msg.texte || '')
 
-    const title = `✉️ ${msg.senderNom || "Message privé"}`
-    const body = msg.imageUrl ? "📷 Photo" : msg.texte || ""
-
-    try {
-      await getMessaging().send({
-        token,
-        notification: { title, body },
-        webpush: {
-          notification: {
-            title,
-            body,
-            icon: "/favicon.ico",
-            badge: "/favicon.ico",
-            tag: `msg-prive-${msg.senderId}`,
-            renotify: "true",
-            vibrate: "200,100,200",
-          },
-          fcmOptions: { link: "/" },
+    const message = {
+      token: tokenData.token,
+      notification: { title: titre, body: corps },
+      data: {
+        type: 'message_prive',
+        senderId: msg.senderId,
+        senderNom: msg.senderNom || '',
+        convId: convId,
+      },
+      webpush: {
+        notification: {
+          title: titre,
+          body: corps,
+          icon: '/favicon.ico',
+          badge: '/favicon.ico',
+          tag: 'msg-prive-' + msg.senderId,
+          renotify: true,
         },
-      })
-    } catch (e) {
-      if (e.code === "messaging/registration-token-not-registered") {
-        await db.ref(`fcm_tokens/${receiverUid}`).remove()
+        fcmOptions: { link: '/' }
       }
     }
+
+    try {
+      await messaging.send(message)
+      console.log('Notif privee envoyee a ' + destinataireId)
+    } catch (err) {
+      console.error('Erreur notif privee:', err)
+      if (err.code === 'messaging/registration-token-not-registered') {
+        await db.ref('fcm_tokens/' + destinataireId).remove()
+      }
+    }
+
+    return null
   }
 )
 
-// ─────────────────────────────────────────────
-// 🔔 Notification : nouveau message groupe
-// ─────────────────────────────────────────────
-exports.notifyMessageGroupe = onValueCreated(
-  {
-    ref: "/chat_groupe/{msgId}",
-    region: "us-central1",
-    database: "https://callconnect-b328a-default-rtdb.firebaseio.com",
-  },
+// Notification CHAT GROUPE
+exports.notifierChatGroupe = onValueCreated(
+  '/chat_groupe/{msgId}',
   async (event) => {
     const msg = event.data.val()
-    if (!msg || !msg.nom) return
+    if (!msg || !msg.nom) return null
 
-    const db = getDatabase()
-    const tokensSnap = await db.ref("fcm_tokens").get()
-    if (!tokensSnap.exists()) return
+    const tokensSnap = await db.ref('fcm_tokens').once('value')
+    const tokensData = tokensSnap.val()
+    if (!tokensData) return null
 
-    const tokens = []
-    tokensSnap.forEach((child) => {
-      const uid = child.key
-      const { token, nom } = child.val()
-      if (nom !== msg.nom && token) tokens.push({ uid, token })
+    const titre = msg.nom + ' dans le chat groupe'
+    const corps = msg.imageUrl ? 'Photo' : (msg.texte || '')
+
+    const tokens = Object.entries(tokensData)
+      .filter(function(entry) { return entry[1].nom !== msg.nom })
+      .map(function(entry) { return entry[1].token })
+      .filter(Boolean)
+
+    if (tokens.length === 0) return null
+
+    const messages = tokens.map(function(token) {
+      return {
+        token: token,
+        notification: { title: titre, body: corps },
+        data: { type: 'chat_groupe', senderNom: msg.nom },
+        webpush: {
+          notification: {
+            title: titre,
+            body: corps,
+            icon: '/favicon.ico',
+            badge: '/favicon.ico',
+            tag: 'chat-groupe',
+            renotify: true,
+          },
+          fcmOptions: { link: '/' }
+        }
+      }
     })
 
-    if (tokens.length === 0) return
-
-    const title = `💬 ${msg.nom}`
-    const body = msg.imageUrl ? "📷 Photo" : msg.texte || ""
-
-    await Promise.all(
-      tokens.map(async ({ uid, token }) => {
-        try {
-          await getMessaging().send({
-            token,
-            notification: { title, body },
-            webpush: {
-              notification: {
-                title,
-                body,
-                icon: "/favicon.ico",
-                badge: "/favicon.ico",
-                tag: "chat-groupe",
-                renotify: "true",
-                vibrate: "200,100,200",
-              },
-              fcmOptions: { link: "/" },
-            },
-          })
-        } catch (e) {
-          if (e.code === "messaging/registration-token-not-registered") {
-            await db.ref(`fcm_tokens/${uid}`).remove()
-          }
+    try {
+      const response = await messaging.sendEach(messages)
+      console.log('Groupe: ' + response.successCount + ' envoyes')
+      const tokensEntries = Object.entries(tokensData).filter(function(e) { return e[1].token })
+      response.responses.forEach(function(resp, i) {
+        if (!resp.success && resp.error && resp.error.code === 'messaging/registration-token-not-registered') {
+          const uid = tokensEntries[i] && tokensEntries[i][0]
+          if (uid) db.ref('fcm_tokens/' + uid).remove()
         }
       })
-    )
+    } catch (err) {
+      console.error('Erreur notif groupe:', err)
+    }
+
+    return null
+  }
+)
+
+// Notification CONSIGNE
+exports.notifierConsigne = onValueCreated(
+  '/consignes/{consigneId}',
+  async (event) => {
+    const consigne = event.data.val()
+    if (!consigne) return null
+
+    const tokensSnap = await db.ref('fcm_tokens').once('value')
+    const tokensData = tokensSnap.val()
+    if (!tokensData) return null
+
+    const titre = 'Nouvelle consigne: ' + (consigne.titre || '')
+    const corps = 'Par ' + (consigne.auteur || '')
+
+    const tokens = Object.values(tokensData).map(function(d) { return d.token }).filter(Boolean)
+    if (tokens.length === 0) return null
+
+    const messages = tokens.map(function(token) {
+      return {
+        token: token,
+        notification: { title: titre, body: corps },
+        webpush: {
+          notification: {
+            title: titre,
+            body: corps,
+            icon: '/favicon.ico',
+            tag: 'consigne',
+            renotify: true
+          },
+          fcmOptions: { link: '/' }
+        }
+      }
+    })
+
+    try {
+      const response = await messaging.sendEach(messages)
+      console.log('Consigne: ' + response.successCount + ' envoyes')
+    } catch (err) {
+      console.error('Erreur notif consigne:', err)
+    }
+
+    return null
   }
 )
