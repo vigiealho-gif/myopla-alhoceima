@@ -14,6 +14,7 @@ import NotreEntreprise from './pages/NotreEntreprise'
 import Administration from './pages/Administration'
 import Planning from './pages/Planning'
 import Profil from './pages/Profil'
+import CarteAgents from './pages/CarteAgents'
 import Sidebar from './components/Sidebar'
 
 function AppContent() {
@@ -25,7 +26,6 @@ function AppContent() {
   const initializedRef = useRef(false)
   const tokenRefreshInterval = useRef(null)
 
-  // ✅ Fonction pour enregistrer/rafraichir le token FCM
   const registerFCMToken = async () => {
     if (!user) return
     if (!('Notification' in window)) return
@@ -38,42 +38,22 @@ function AppContent() {
       const token = await getFCMToken()
       if (token) {
         await set(ref(db, `fcm_tokens/${user.uid}`), {
-          token,
-          nom: userData?.nom || '',
-          role: userData?.role || '',
-          updatedAt: Date.now()
+          token, nom: userData?.nom || '', role: userData?.role || '', updatedAt: Date.now()
         })
-        console.log('Token FCM enregistre/rafraichi')
       }
-    } catch (e) {
-      console.error('Erreur token FCM:', e)
-    }
+    } catch (e) { console.error('Erreur token FCM:', e) }
   }
 
   useEffect(() => {
     if (!user) return
-
-    // Enregistrer le token au demarrage
     registerFCMToken()
-
-    // Rafraichir le token toutes les 30 minutes
-    tokenRefreshInterval.current = setInterval(() => {
-      registerFCMToken()
-    }, 30 * 60 * 1000)
-
-    return () => {
-      if (tokenRefreshInterval.current) clearInterval(tokenRefreshInterval.current)
-    }
+    tokenRefreshInterval.current = setInterval(() => registerFCMToken(), 30 * 60 * 1000)
+    return () => { if (tokenRefreshInterval.current) clearInterval(tokenRefreshInterval.current) }
   }, [user, userData?.nom])
 
-  // Rafraichir aussi quand la page redevient visible (retour sur l'onglet)
   useEffect(() => {
     if (!user) return
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        registerFCMToken()
-      }
-    }
+    const handleVisibilityChange = () => { if (document.visibilityState === 'visible') registerFCMToken() }
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [user, userData?.nom])
@@ -152,6 +132,7 @@ function AppContent() {
         {activePage === 'administration'   && <Administration />}
         {activePage === 'planning'         && <Planning />}
         {activePage === 'profil'           && <Profil />}
+        {activePage === 'carte-agents'     && <CarteAgents onNavigate={handleNavigate} />}
       </main>
 
       {notification && (

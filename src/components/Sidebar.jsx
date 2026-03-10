@@ -145,8 +145,9 @@ export default function Sidebar({ activePage, onNavigate }) {
     { id: 'presentation', icon: '🏢', label: 'Notre Entreprise'  },
   ]
   const menuItemsComm = [
-    { id: 'groupe',     icon: '💬', label: 'Chat Groupe',       badge: 0              },
-    { id: 'messagerie', icon: '✉️', label: 'Messagerie Privée', badge: unreadMessages },
+    { id: 'groupe',       icon: '💬', label: 'Chat Groupe',       badge: 0              },
+    { id: 'messagerie',   icon: '✉️', label: 'Messagerie Privée', badge: unreadMessages },
+    { id: 'carte-agents', icon: '👥', label: 'Carte des Agents',  badge: 0              }, // ✅ NOUVEAU
   ]
   const menuItemsContenu = [
     { id: 'actualites',       icon: '📰', label: 'Actualités',      badge: 0            },
