@@ -4,6 +4,84 @@ import { ref, onValue } from 'firebase/database'
 import { db } from '../firebase'
 import amazighImg from '../assets/amazigh.png'
 
+function AnimatedNumber({ value }) {
+  const [display, setDisplay] = useState(0)
+  useEffect(() => {
+    let start = 0
+    const duration = 1000
+    const step = 16
+    const increment = value / (duration / step)
+    const timer = setInterval(() => {
+      start += increment
+      if (start >= value) { setDisplay(value); clearInterval(timer) }
+      else setDisplay(Math.floor(start))
+    }, step)
+    return () => clearInterval(timer)
+  }, [value])
+  return <>{display}</>
+}
+
+function MiniBarChart({ data, color }) {
+  const max = Math.max(...data, 1)
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '32px' }}>
+      {data.map((v, i) => (
+        <div key={i} style={{
+          flex: 1, borderRadius: '3px',
+          background: color,
+          opacity: 0.3 + (i / data.length) * 0.7,
+          height: `${(v / max) * 100}%`,
+          minHeight: '4px',
+          transition: 'height 1s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          transitionDelay: `${i * 60}ms`,
+        }} />
+      ))}
+    </div>
+  )
+}
+
+function DonutChart({ value, max, color, size = 56 }) {
+  const [animated, setAnimated] = useState(0)
+  const pct = max > 0 ? animated / max : 0
+  const r = (size - 12) / 2
+  const circ = 2 * Math.PI * r
+  const dash = pct * circ
+  useEffect(() => { setTimeout(() => setAnimated(value), 300) }, [value])
+  return (
+    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="8" />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="8"
+        strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
+        style={{ transition: 'stroke-dasharray 1.2s cubic-bezier(0.34,1.56,0.64,1) 0.3s' }} />
+    </svg>
+  )
+}
+
+function ActivityLine({ data }) {
+  if (!data || data.length < 2) return null
+  const max = Math.max(...data, 1)
+  const w = 200, h = 60
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - (v / max) * (h - 8)}`)
+  const path = `M ${pts.join(' L ')}`
+  const area = `M 0,${h} L ${pts.join(' L ')} L ${w},${h} Z`
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: '60px', overflow: 'visible' }}>
+      <defs>
+        <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill="url(#lineGrad)" />
+      <path d={path} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      {data.map((v, i) => (
+        <circle key={i} cx={(i / (data.length - 1)) * w} cy={h - (v / max) * (h - 8)}
+          r="3" fill="#3b82f6" stroke="white" strokeWidth="1.5" />
+      ))}
+    </svg>
+  )
+}
+
 function ModalLecture({ item, type, onClose }) {
   if (!item) return null
   const getCatStyle = (cat) => {
@@ -63,6 +141,12 @@ export default function Dashboard({ onNavigate }) {
   const [time, setTime] = useState(new Date())
   const [modalItem, setModalItem] = useState(null)
   const [modalType, setModalType] = useState(null)
+  const [activiteJours, setActiviteJours] = useState([2, 5, 3, 8, 6, 4, 7])
+  const [membresEnLigne, setMembresEnLigne] = useState(0)
+  const [rolesData, setRolesData] = useState({ directrice: 0, superviseure: 0, vigie: 0, formateur: 0, agent: 0 })
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setTimeout(() => setMounted(true), 100) }, [])
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000)
@@ -72,7 +156,17 @@ export default function Dashboard({ onNavigate }) {
   useEffect(() => {
     onValue(ref(db, 'users'), (snap) => {
       const data = snap.val()
-      setStats(prev => ({ ...prev, membres: data ? Object.keys(data).length : 0 }))
+      if (data) {
+        const users = Object.values(data)
+        setStats(prev => ({ ...prev, membres: users.length }))
+        const roles = { directrice: 0, superviseure: 0, vigie: 0, formateur: 0, agent: 0 }
+        users.forEach(u => { if (roles[u.role] !== undefined) roles[u.role]++; else roles.agent++ })
+        setRolesData(roles)
+      }
+    })
+    onValue(ref(db, 'presence'), (snap) => {
+      const data = snap.val()
+      if (data) setMembresEnLigne(Object.values(data).filter(p => p.online).length)
     })
     onValue(ref(db, 'consignes'), (snap) => {
       const data = snap.val()
@@ -85,8 +179,13 @@ export default function Dashboard({ onNavigate }) {
       const data = snap.val()
       const list = data ? Object.entries(data).map(([id, a]) => ({ id, ...a })) : []
       list.sort((a, b) => b.timestamp - a.timestamp)
-      setActualites(list.slice(0, 3))
+      setActualites(list.slice(0, 4))
       setStats(prev => ({ ...prev, actualites: list.length }))
+      const days = [0,1,2,3,4,5,6].map(d => {
+        const date = new Date(); date.setDate(date.getDate() - (6-d))
+        return list.filter(a => a.timestamp && new Date(a.timestamp).toDateString() === date.toDateString()).length
+      })
+      if (days.some(d => d > 0)) setActiviteJours(days)
     })
     onValue(ref(db, 'chat_groupe'), (snap) => {
       const data = snap.val()
@@ -100,46 +199,79 @@ export default function Dashboard({ onNavigate }) {
   }, [])
 
   const getMeteoIcon = c => c === 0 ? '☀️' : c <= 3 ? '⛅' : c <= 67 ? '🌧️' : c <= 77 ? '❄️' : '🌩️'
-  const getCatStyle = (cat) => ({ 'Urgent': 'bg-red-100 text-red-600 border border-red-200', 'Info': 'bg-blue-100 text-blue-600 border border-blue-200', 'RH': 'bg-green-100 text-green-600 border border-green-200', 'Formation': 'bg-purple-100 text-purple-600 border border-purple-200', 'Consigne': 'bg-orange-100 text-orange-600 border border-orange-200', 'Bonne Pratique': 'bg-yellow-100 text-yellow-600 border border-yellow-200' }[cat] || 'bg-gray-100 text-gray-600')
-  const getPrioStyle = p => ({ 'Haute': 'bg-red-100 text-red-600', 'Normale': 'bg-blue-100 text-blue-600' }[p] || 'bg-gray-100 text-gray-600')
   const fmtDate = ts => ts ? new Date(ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : ''
+  const getCatIcon = cat => ({ 'Urgent':'🚨', 'Info':'ℹ️', 'RH':'👔', 'Formation':'📚', 'Consigne':'📋', 'Bonne Pratique':'⭐' }[cat] || '📢')
+  const getCatStyle = (cat) => ({ 'Urgent': 'bg-red-100 text-red-600 border border-red-200', 'Info': 'bg-blue-100 text-blue-600 border border-blue-200', 'RH': 'bg-green-100 text-green-600 border border-green-200', 'Formation': 'bg-purple-100 text-purple-600 border border-purple-200', 'Consigne': 'bg-orange-100 text-orange-600 border border-orange-200', 'Bonne Pratique': 'bg-yellow-100 text-yellow-600 border border-yellow-200' }[cat] || 'bg-gray-100 text-gray-600')
   const getRoleLabel = (r, titre) => {
     if (titre) return titre
     return { directrice: 'Directrice', superviseure: 'Superviseure', vigie: 'Vigie', formateur: 'Formateur' }[r] || 'Agent'
   }
+  const jours = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
+
+  const statCards = [
+    { label: 'Membres', value: stats.membres, icon: '👥', grad: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', mini: [3,5,4,6,5,7,stats.membres], donutColor: '#93c5fd' },
+    { label: 'Actualités', value: stats.actualites, icon: '📰', grad: 'linear-gradient(135deg,#10b981,#059669)', mini: [1,3,2,4,3,5,stats.actualites], donutColor: '#6ee7b7' },
+    { label: 'Consignes', value: stats.consignes, icon: '📋', grad: 'linear-gradient(135deg,#f59e0b,#d97706)', mini: [2,4,3,5,4,6,stats.consignes], donutColor: '#fcd34d' },
+    { label: 'Messages', value: stats.messages, icon: '💬', grad: 'linear-gradient(135deg,#8b5cf6,#7c3aed)', mini: [5,8,6,10,8,12,stats.messages], donutColor: '#c4b5fd' },
+  ]
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="relative bg-gradient-to-br from-blue-900 via-blue-700 to-blue-500 overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-white opacity-5 rounded-full -translate-y-1/2 translate-x-1/2"></div>
-        <div className="absolute bottom-0 left-20 w-64 h-64 bg-white opacity-5 rounded-full translate-y-1/2"></div>
-        <div className="absolute top-1/2 left-1/3 w-32 h-32 bg-blue-300 opacity-10 rounded-full"></div>
-        <div className="relative px-8 py-8">
-          <div className="flex items-center justify-between">
+    <div style={{ minHeight: '100vh', background: '#f0f4ff' }}>
+      <style>{`
+        @keyframes slideDown { from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)} }
+        @keyframes slideUp2 { from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)} }
+        @keyframes pulse2 { 0%,100%{opacity:1}50%{opacity:0.5} }
+        .stat-card{transition:transform .2s,box-shadow .2s}
+        .stat-card:hover{transform:translateY(-5px);box-shadow:0 24px 48px rgba(0,0,0,.18)!important}
+        .card-h{transition:transform .2s,box-shadow .2s;background:#fff}
+        .card-h:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.08)!important}
+        .row-h{transition:background .15s;border-radius:14px;cursor:pointer}
+        .row-h:hover{background:#f0f7ff}
+        .btn-link{background:none;border:none;cursor:pointer;transition:all .2s}
+      `}</style>
+
+      {/* Hero */}
+      <div style={{ background:'linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#1e40af 100%)', position:'relative', overflow:'hidden', animation:'slideDown .6s ease' }}>
+        <div style={{ position:'absolute', top:'-80px', right:'-80px', width:'350px', height:'350px', background:'rgba(59,130,246,.12)', borderRadius:'50%' }} />
+        <div style={{ position:'absolute', bottom:'-100px', left:'5%', width:'300px', height:'300px', background:'rgba(139,92,246,.08)', borderRadius:'50%' }} />
+        <div style={{ position:'absolute', inset:0, backgroundImage:'linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px)', backgroundSize:'40px 40px' }} />
+
+        <div style={{ position:'relative', padding:'32px 40px' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
             <div>
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center text-xl backdrop-blur-sm border border-white border-opacity-20">ⵣ</div>
-                <div className="h-px w-12 bg-white bg-opacity-30"></div>
-                <span className="text-white text-opacity-60 text-sm font-light tracking-widest uppercase">Al Hoceima • Rif</span>
+              <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'12px' }}>
+                <div style={{ width:'40px', height:'40px', background:'rgba(255,255,255,.1)', borderRadius:'12px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'20px', border:'1px solid rgba(255,255,255,.15)' }}>ⵣ</div>
+                <div style={{ height:'1px', width:'40px', background:'rgba(255,255,255,.2)' }} />
+                <span style={{ color:'rgba(255,255,255,.4)', fontSize:'11px', fontWeight:500, letterSpacing:'3px', textTransform:'uppercase' }}>Al Hoceima · Rif</span>
               </div>
-              <h1 className="text-3xl font-bold text-white mb-1">Bonjour, {userData?.nom?.split(' ')[0]} 👋</h1>
-              <p className="text-blue-200 text-sm">{getRoleLabel(userData?.role, userData?.titre)} — Myopla Al Hoceima</p>
-              <div className="mt-4">
-                <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-xl px-4 py-2 inline-block border border-white border-opacity-10">
-                  <div className="text-white text-xl font-bold tracking-wider">{time.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>
-                  <div className="text-blue-200 text-xs">{time.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+              <h1 style={{ fontSize:'32px', fontWeight:800, color:'#fff', marginBottom:'4px', lineHeight:1.2 }}>
+                Bonjour, {userData?.nom?.split(' ')[0]} 👋
+              </h1>
+              <p style={{ color:'rgba(147,197,253,.8)', fontSize:'14px', marginBottom:'20px' }}>
+                {getRoleLabel(userData?.role, userData?.titre)} — Myopla Al Hoceima
+              </p>
+              <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
+                <div style={{ background:'rgba(255,255,255,.08)', borderRadius:'14px', padding:'10px 18px', border:'1px solid rgba(255,255,255,.1)' }}>
+                  <div style={{ color:'#fff', fontSize:'22px', fontWeight:700, letterSpacing:'2px' }}>{time.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div>
+                  <div style={{ color:'rgba(147,197,253,.6)', fontSize:'11px', marginTop:'2px' }}>{time.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</div>
                 </div>
+                {membresEnLigne > 0 && (
+                  <div style={{ background:'rgba(16,185,129,.15)', border:'1px solid rgba(16,185,129,.3)', borderRadius:'14px', padding:'10px 16px', display:'flex', alignItems:'center', gap:'8px' }}>
+                    <span style={{ width:'8px', height:'8px', borderRadius:'50%', background:'#10b981', animation:'pulse2 2s infinite', display:'inline-block' }} />
+                    <span style={{ color:'#6ee7b7', fontSize:'13px', fontWeight:500 }}>{membresEnLigne} en ligne</span>
+                  </div>
+                )}
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl border border-white border-opacity-20 overflow-hidden">
-                <img src={amazighImg} alt="Amazigh" className="h-32 w-24 object-cover" />
+            <div style={{ display:'flex', alignItems:'center', gap:'16px' }}>
+              <div style={{ background:'rgba(255,255,255,.08)', borderRadius:'20px', border:'1px solid rgba(255,255,255,.15)', overflow:'hidden' }}>
+                <img src={amazighImg} alt="Amazigh" style={{ height:'130px', width:'95px', objectFit:'cover', display:'block' }} />
               </div>
               {meteo && (
-                <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-5 text-center border border-white border-opacity-10">
-                  <div className="text-5xl mb-2">{getMeteoIcon(meteo.weathercode)}</div>
-                  <div className="text-white text-2xl font-bold">{Math.round(meteo.temperature)}°C</div>
-                  <div className="text-blue-200 text-xs mt-1">Al Hoceima</div>
+                <div style={{ background:'rgba(255,255,255,.08)', borderRadius:'20px', padding:'20px 24px', textAlign:'center', border:'1px solid rgba(255,255,255,.1)' }}>
+                  <div style={{ fontSize:'44px', marginBottom:'6px' }}>{getMeteoIcon(meteo.weathercode)}</div>
+                  <div style={{ color:'#fff', fontSize:'28px', fontWeight:700 }}>{Math.round(meteo.temperature)}°C</div>
+                  <div style={{ color:'rgba(147,197,253,.6)', fontSize:'11px', marginTop:'4px' }}>Al Hoceima</div>
                 </div>
               )}
             </div>
@@ -147,89 +279,148 @@ export default function Dashboard({ onNavigate }) {
         </div>
       </div>
 
-      <div className="px-8 py-6">
-        <div className="grid grid-cols-4 gap-4 mb-6 -mt-6 relative z-10">
-          {[
-            { label: 'Membres',    value: stats.membres,    icon: '👥', color: 'from-blue-500 to-blue-600',    shadow: 'shadow-blue-200'   },
-            { label: 'Actualités', value: stats.actualites, icon: '📰', color: 'from-green-500 to-green-600',  shadow: 'shadow-green-200'  },
-            { label: 'Consignes',  value: stats.consignes,  icon: '📋', color: 'from-orange-500 to-orange-600',shadow: 'shadow-orange-200' },
-            { label: 'Messages',   value: stats.messages,   icon: '💬', color: 'from-purple-500 to-purple-600',shadow: 'shadow-purple-200' },
-          ].map((s, i) => (
-            <div key={i} className={`bg-gradient-to-br ${s.color} rounded-2xl p-5 text-white shadow-lg ${s.shadow}`}>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-2xl">{s.icon}</span>
-                <div className="w-8 h-8 bg-white bg-opacity-20 rounded-lg"></div>
+      <div style={{ padding:'0 40px 40px' }}>
+
+        {/* Stat Cards */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'16px', marginTop:'-28px', position:'relative', zIndex:10, animation:'slideUp2 .6s ease .1s both' }}>
+          {statCards.map((s, i) => (
+            <div key={i} className="stat-card" style={{ background:s.grad, borderRadius:'20px', padding:'20px', boxShadow:'0 8px 24px rgba(0,0,0,.12)' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'10px' }}>
+                <div>
+                  <div style={{ fontSize:'24px', marginBottom:'4px' }}>{s.icon}</div>
+                  <div style={{ color:'rgba(255,255,255,.6)', fontSize:'11px', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>{s.label}</div>
+                </div>
+                <DonutChart value={s.value} max={Math.max(s.value * 1.5, 10)} color={s.donutColor} size={52} />
               </div>
-              <div className="text-3xl font-bold mb-1">{s.value}</div>
-              <div className="text-white text-opacity-80 text-sm">{s.label}</div>
+              <div style={{ color:'#fff', fontSize:'36px', fontWeight:800, lineHeight:1, marginBottom:'10px' }}>
+                <AnimatedNumber value={s.value} />
+              </div>
+              <MiniBarChart data={s.mini} color="rgba(255,255,255,.7)" />
             </div>
           ))}
         </div>
 
-        <div className="grid grid-cols-3 gap-6">
-          <div className="col-span-2 bg-white rounded-2xl shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="font-bold text-gray-800">📰 Dernières Actualités</h2>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{stats.actualites} total</span>
-                <button onClick={() => onNavigate && onNavigate('actualites')} className="text-xs text-blue-500 hover:text-blue-700 font-medium transition">Voir tout →</button>
+        {/* Graphiques */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'20px', marginTop:'24px', animation:'slideUp2 .6s ease .2s both' }}>
+
+          {/* Activité */}
+          <div className="card-h" style={{ borderRadius:'20px', padding:'24px', boxShadow:'0 4px 16px rgba(0,0,0,.06)' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px' }}>
+              <div>
+                <h3 style={{ fontWeight:700, color:'#1e293b', fontSize:'15px', marginBottom:'2px' }}>📈 Activité récente</h3>
+                <p style={{ color:'#94a3b8', fontSize:'12px' }}>Publications des 7 derniers jours</p>
               </div>
+              <span style={{ background:'#eff6ff', color:'#3b82f6', fontSize:'11px', fontWeight:600, padding:'4px 10px', borderRadius:'100px' }}>7 jours</span>
             </div>
-            <div className="p-4">
-              {actualites.length === 0 ? (
-                <div className="text-center text-gray-400 py-8"><div className="text-3xl mb-2">📰</div><p className="text-sm">Aucune actualité</p></div>
-              ) : (
-                <div className="space-y-2">
-                  {actualites.map(actu => (
-                    <div key={actu.id} onClick={() => { setModalItem(actu); setModalType('actualite') }}
-                      className="flex items-center gap-3 p-3 rounded-xl hover:bg-blue-50 transition cursor-pointer group">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${getCatStyle(actu.categorie)}`}>{actu.categorie}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-600 transition">{actu.titre}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">Par {actu.auteur} • {fmtDate(actu.timestamp)}</div>
-                      </div>
-                      <span className="text-gray-300 group-hover:text-blue-400 transition text-lg flex-shrink-0">›</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <ActivityLine data={activiteJours} />
+            <div style={{ display:'flex', justifyContent:'space-between', marginTop:'8px' }}>
+              {jours.map((j, i) => <span key={i} style={{ color:'#94a3b8', fontSize:'10px', fontWeight:500 }}>{j}</span>)}
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="font-bold text-gray-800 text-sm">📋 Consignes Récentes</h2>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{stats.consignes}</span>
-                <button onClick={() => onNavigate && onNavigate('consignes')} className="text-xs text-blue-500 hover:text-blue-700 font-medium transition">Tout →</button>
+          {/* Répartition équipe */}
+          <div className="card-h" style={{ borderRadius:'20px', padding:'24px', boxShadow:'0 4px 16px rgba(0,0,0,.06)' }}>
+            <div style={{ marginBottom:'20px' }}>
+              <h3 style={{ fontWeight:700, color:'#1e293b', fontSize:'15px', marginBottom:'2px' }}>👥 Répartition équipe</h3>
+              <p style={{ color:'#94a3b8', fontSize:'12px' }}>Composition par rôle</p>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
+              {[
+                { label:'Directrice', value:rolesData.directrice, color:'#f59e0b' },
+                { label:'Superviseure', value:rolesData.superviseure, color:'#8b5cf6' },
+                { label:'Vigie', value:rolesData.vigie, color:'#3b82f6' },
+                { label:'Formateur', value:rolesData.formateur, color:'#10b981' },
+                { label:'Agent', value:rolesData.agent, color:'#6b7280' },
+              ].filter(r => r.value > 0).map((r, i) => (
+                <div key={i} style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                  <span style={{ fontSize:'12px', fontWeight:600, color:'#64748b', width:'90px', flexShrink:0 }}>{r.label}</span>
+                  <div style={{ flex:1, height:'8px', background:'#f1f5f9', borderRadius:'100px', overflow:'hidden' }}>
+                    <div style={{
+                      height:'100%', background:r.color, borderRadius:'100px',
+                      width: mounted ? `${stats.membres > 0 ? (r.value / stats.membres) * 100 : 0}%` : '0%',
+                      transition:`width 1.2s cubic-bezier(0.34,1.56,0.64,1) ${i*0.1}s`,
+                    }} />
+                  </div>
+                  <span style={{ fontSize:'13px', fontWeight:700, color:r.color, width:'20px', textAlign:'right' }}>{r.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Actualités + Consignes */}
+        <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:'20px', marginTop:'20px', animation:'slideUp2 .6s ease .3s both' }}>
+
+          {/* Actualités */}
+          <div className="card-h" style={{ borderRadius:'20px', boxShadow:'0 4px 16px rgba(0,0,0,.06)', overflow:'hidden' }}>
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div>
+                <h3 style={{ fontWeight:700, color:'#1e293b', fontSize:'15px', marginBottom:'2px' }}>📰 Dernières Actualités</h3>
+                <p style={{ color:'#94a3b8', fontSize:'12px' }}>{stats.actualites} publication{stats.actualites > 1 ? 's' : ''} au total</p>
+              </div>
+              <button className="btn-link" onClick={() => onNavigate && onNavigate('actualites')}
+                style={{ background:'#eff6ff', color:'#3b82f6', borderRadius:'10px', padding:'6px 14px', fontSize:'12px', fontWeight:600 }}
+                onMouseEnter={e => { e.target.style.background='#3b82f6'; e.target.style.color='#fff' }}
+                onMouseLeave={e => { e.target.style.background='#eff6ff'; e.target.style.color='#3b82f6' }}>
+                Voir tout →
+              </button>
+            </div>
+            <div style={{ padding:'8px' }}>
+              {actualites.length === 0 ? (
+                <div style={{ textAlign:'center', padding:'40px', color:'#94a3b8' }}>
+                  <div style={{ fontSize:'32px', marginBottom:'8px' }}>📰</div>
+                  <p style={{ fontSize:'13px' }}>Aucune actualité</p>
+                </div>
+              ) : actualites.map(actu => (
+                <div key={actu.id} className="row-h" onClick={() => { setModalItem(actu); setModalType('actualite') }}
+                  style={{ display:'flex', alignItems:'center', gap:'12px', padding:'12px 16px', marginBottom:'2px' }}>
+                  <div style={{ width:'40px', height:'40px', borderRadius:'12px', flexShrink:0, background:'#eff6ff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'18px' }}>
+                    {getCatIcon(actu.categorie)}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:'14px', fontWeight:600, color:'#1e293b', marginBottom:'2px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{actu.titre}</div>
+                    <div style={{ fontSize:'12px', color:'#94a3b8' }}>Par {actu.auteur} · {fmtDate(actu.timestamp)}</div>
+                  </div>
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${getCatStyle(actu.categorie)}`}>{actu.categorie}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Colonne droite */}
+          <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
+            {/* Consignes */}
+            <div className="card-h" style={{ borderRadius:'20px', boxShadow:'0 4px 16px rgba(0,0,0,.06)', overflow:'hidden', flex:1 }}>
+              <div style={{ padding:'16px 20px', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <h3 style={{ fontWeight:700, color:'#1e293b', fontSize:'14px' }}>📋 Consignes</h3>
+                <button className="btn-link" onClick={() => onNavigate && onNavigate('consignes')}
+                  style={{ color:'#3b82f6', fontSize:'12px', fontWeight:600 }}>Tout →</button>
+              </div>
+              <div style={{ padding:'8px' }}>
+                {consignes.length === 0 ? (
+                  <div style={{ textAlign:'center', padding:'24px', color:'#94a3b8' }}>
+                    <div style={{ fontSize:'24px', marginBottom:'4px' }}>📋</div>
+                    <p style={{ fontSize:'12px' }}>Aucune consigne</p>
+                  </div>
+                ) : consignes.map(c => (
+                  <div key={c.id} className="row-h" onClick={() => { setModalItem(c); setModalType('consigne') }}
+                    style={{ padding:'10px 12px', marginBottom:'4px' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'4px' }}>
+                      <span style={{ fontSize:'10px', fontWeight:700, padding:'2px 8px', borderRadius:'100px', background:c.priorite==='Haute'?'#fef2f2':'#eff6ff', color:c.priorite==='Haute'?'#ef4444':'#3b82f6' }}>{c.priorite}</span>
+                      <span style={{ fontSize:'11px', color:'#94a3b8' }}>{fmtDate(c.timestamp)}</span>
+                    </div>
+                    <div style={{ fontSize:'13px', fontWeight:600, color:'#1e293b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.titre}</div>
+                  </div>
+                ))}
               </div>
             </div>
-            <div className="p-4">
-              {consignes.length === 0 ? (
-                <div className="text-center text-gray-400 py-6"><div className="text-3xl mb-2">📋</div><p className="text-xs">Aucune consigne</p></div>
-              ) : (
-                <div className="space-y-3">
-                  {consignes.map(c => (
-                    <div key={c.id} onClick={() => { setModalItem(c); setModalType('consigne') }}
-                      className="p-3 rounded-xl bg-gray-50 hover:bg-blue-50 transition cursor-pointer group">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${getPrioStyle(c.priorite)}`}>{c.priorite}</span>
-                        <span className="text-gray-300 group-hover:text-blue-400 text-base transition">›</span>
-                      </div>
-                      <div className="text-sm font-medium text-gray-700 truncate group-hover:text-blue-600 transition">{c.titre}</div>
-                      <div className="text-xs text-gray-400 mt-1">{fmtDate(c.timestamp)}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="px-5 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-t border-gray-100">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl text-blue-400">ⵣ</span>
-                <div>
-                  <div className="text-xs font-semibold text-blue-700">ⴰⵣⵓⵍ ⴼⵍⵍⴰⵡⵏ</div>
-                  <div className="text-xs text-blue-400">Bonjour à tous — Rif</div>
-                </div>
+
+            {/* Widget Rif */}
+            <div style={{ background:'linear-gradient(135deg,#1e3a5f,#1e40af)', borderRadius:'20px', padding:'20px', boxShadow:'0 4px 16px rgba(30,64,175,.3)', display:'flex', alignItems:'center', gap:'14px' }}>
+              <span style={{ fontSize:'32px', opacity:0.5 }}>ⵣ</span>
+              <div>
+                <div style={{ color:'#93c5fd', fontSize:'14px', fontWeight:700, letterSpacing:'0.5px' }}>ⴰⵣⵓⵍ ⴼⵍⵍⴰⵡⵏ</div>
+                <div style={{ color:'rgba(147,197,253,.45)', fontSize:'11px', marginTop:'2px' }}>Bonjour à tous — Rif</div>
               </div>
             </div>
           </div>
