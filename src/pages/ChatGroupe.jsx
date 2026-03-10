@@ -24,9 +24,9 @@ function MessageText({ texte }) {
   return (
     <>
       {parts.map((part, i) =>
-        part.startsWith('@')
-          ? <span key={i} className="bg-blue-200 text-blue-800 rounded px-1 font-semibold">{part}</span>
-          : <span key={i}>{part}</span>
+        part.startsWith('@') ? (
+          <span key={i} className="bg-blue-200 text-blue-800 rounded px-1 font-semibold">{part}</span>
+        ) : <span key={i}>{part}</span>
       )}
     </>
   )
@@ -99,7 +99,7 @@ export default function ChatGroupe() {
               g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
               o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
             } catch (e) {}
-            sendNotification({ title: `💬 ${newMsg.nom}`, body: newMsg.imageUrl ? '📷 Photo' : newMsg.texte, icon: '/favicon.ico', tag: `chat-groupe-${newMsg.nom}` })
+            sendNotification({ title: `💬 ${newMsg.nom}`, body: newMsg.imageUrl ? (newMsg.texte ? `📷 ${newMsg.texte}` : '📷 Photo') : newMsg.texte, icon: '/favicon.ico', tag: `chat-groupe-${newMsg.nom}` })
             if (newMsg.texte?.includes(`@${userData?.nom}`)) {
               sendNotification({ title: `🔔 ${newMsg.nom} vous a mentionné`, body: newMsg.texte, icon: '/favicon.ico', tag: `mention-${newMsg.nom}` })
             }
@@ -109,7 +109,9 @@ export default function ChatGroupe() {
         messagesList.forEach(msg => {
           if (msg.nom !== userData?.nom && !msg.vus?.[user.uid] && !markedAsRead.current.has(msg.id)) {
             markedAsRead.current.add(msg.id)
-            update(ref(db, `chat_groupe/${msg.id}/vus`), { [user.uid]: { nom: userData?.nom, role: userData?.role, vu_le: Date.now() } })
+            update(ref(db, `chat_groupe/${msg.id}/vus`), {
+              [user.uid]: { nom: userData?.nom, role: userData?.role, vu_le: Date.now() }
+            })
           }
         })
 
@@ -121,6 +123,7 @@ export default function ChatGroupe() {
         isInitialLoad.current = false
       }
     })
+
     return () => { unsubscribe(); if (notifTimeout.current) clearTimeout(notifTimeout.current) }
   }, [userData?.nom, user?.uid])
 
@@ -152,14 +155,17 @@ export default function ChatGroupe() {
   const handleInputChange = (e) => {
     const val = e.target.value
     const pos = e.target.selectionStart
-    setNewMessage(val); setCursorPos(pos)
+    setNewMessage(val)
+    setCursorPos(pos)
     const textBeforeCursor = val.slice(0, pos)
     const atIndex = textBeforeCursor.lastIndexOf('@')
     if (atIndex !== -1) {
       const query = textBeforeCursor.slice(atIndex + 1)
       if (!query.includes(' ') || query.length === 0) {
         const filtered = membres.filter(m => m.id !== user.uid && m.nom.toLowerCase().includes(query.toLowerCase()))
-        setMentionSuggestions(filtered); setShowMentions(filtered.length > 0); return
+        setMentionSuggestions(filtered)
+        setShowMentions(filtered.length > 0)
+        return
       }
     }
     setShowMentions(false)
@@ -191,7 +197,11 @@ export default function ChatGroupe() {
   const getReactionSummary = (reactions) => {
     if (!reactions) return []
     return Object.entries(reactions)
-      .map(([emoji, users]) => ({ emoji, count: Object.values(users).filter(Boolean).length, hasReacted: !!users[userData?.nom], names: Object.entries(users).filter(([, v]) => v).map(([name]) => name) }))
+      .map(([emoji, users]) => ({
+        emoji, count: Object.values(users).filter(Boolean).length,
+        hasReacted: !!users[userData?.nom],
+        names: Object.entries(users).filter(([, v]) => v).map(([name]) => name)
+      }))
       .filter(r => r.count > 0)
   }
 
@@ -202,35 +212,47 @@ export default function ChatGroupe() {
 
   const sendMessage = async (e) => {
     e.preventDefault()
+    // Si image sélectionnée → envoyer image + texte ensemble
+    if (selectedImage) {
+      await sendImage(selectedImage)
+      return
+    }
     if (!newMessage.trim()) return
     await push(ref(db, 'chat_groupe'), {
       texte: newMessage.trim(), nom: userData?.nom, role: userData?.role,
-      titre: userData?.titre || null,
+      titre: userData?.titre || null, senderId: user.uid,
       timestamp: serverTimestamp(),
       vus: { [user.uid]: { nom: userData?.nom, role: userData?.role, vu_le: Date.now() } }
     })
-    setNewMessage(''); setUnreadCount(0)
+    setNewMessage('')
+    setUnreadCount(0)
   }
 
   const sendImage = async (file) => {
     if (!file) return
     setUploading(true)
     try {
-      const fileRef = storageRef(storage, `chat_groupe/${Date.now()}_${file.name}`)
+      const fileRef = storageRef(storage, `chat_groupe/${Date.now()}_${file.name || 'image'}`)
       await uploadBytes(fileRef, file)
       const url = await getDownloadURL(fileRef)
       await push(ref(db, 'chat_groupe'), {
-        texte: '', imageUrl: url, nom: userData?.nom, role: userData?.role,
-        titre: userData?.titre || null,
+        texte: newMessage.trim(), // ✅ texte avec la photo
+        imageUrl: url,
+        nom: userData?.nom, role: userData?.role,
+        titre: userData?.titre || null, senderId: user.uid,
         timestamp: serverTimestamp(),
         vus: { [user.uid]: { nom: userData?.nom, role: userData?.role, vu_le: Date.now() } }
       })
+      setNewMessage('') // ✅ vide le champ
     } catch (err) { console.error('Erreur upload:', err) }
-    setUploading(false); setSelectedImage(null); fileInputRef.current.value = ''
+    setUploading(false)
+    setSelectedImage(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    setUnreadCount(0)
   }
 
   const handleFileChange = (e) => { const file = e.target.files[0]; if (file) setSelectedImage(file) }
-  const startEdit = (msg) => { setEditingId(msg.id); setEditText(msg.texte); setMenuId(null) }
+  const startEdit = (msg) => { setEditingId(msg.id); setEditText(msg.texte || ''); setMenuId(null) }
 
   const saveEdit = async (msgId) => {
     if (!editText.trim()) return
@@ -271,13 +293,15 @@ export default function ChatGroupe() {
     return date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
   }
 
-  const getRoleColor = (role) => ({ directrice: 'text-amber-600', superviseure: 'text-purple-600', vigie: 'text-indigo-600', formateur: 'text-teal-600' }[role] || 'text-blue-600')
+  const getRoleColor = (role) => ({ directrice: 'text-amber-600', vigie: 'text-indigo-600', formateur: 'text-teal-600', superviseure: 'text-purple-600' }[role] || 'text-blue-600')
   const getRoleLabel = (role, titre) => {
     if (titre) return titre
     return { directrice: 'Directrice', superviseure: 'Superviseure', vigie: 'Vigie', formateur: 'Formateur' }[role] || 'Agent'
   }
   const isMyMessage = (msg) => msg.nom === userData?.nom
   const mentionsMe = (msg) => msg.texte?.includes(`@${userData?.nom}`)
+  const getPhotoByNom = (nom) => membres.find(m => m.nom === nom)?.photoURL || null
+  const getPhotoById = (id) => membres.find(m => m.id === id)?.photoURL || null
 
   return (
     <div className="flex flex-col h-screen relative">
@@ -307,13 +331,13 @@ export default function ChatGroupe() {
         <div className="absolute top-20 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-start gap-3 cursor-pointer hover:shadow-2xl transition"
           style={{ maxWidth: '300px', animation: 'slideIn 0.3s ease' }}
           onClick={() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); setNotification(null); setUnreadCount(0) }}>
-          <Avatar nom={notification.nom} role={notification.role} photoURL={membres.find(m => m.nom === notification.nom)?.photoURL} size="lg" />
+          <Avatar nom={notification.nom} role={notification.role} photoURL={getPhotoByNom(notification.nom)} size="lg" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-bold text-gray-800 truncate">{notification.nom}</span>
               <span className={`text-xs font-medium ${getRoleColor(notification.role)}`}>{getRoleLabel(notification.role, notification.titre)}</span>
             </div>
-            <p className="text-sm text-gray-600 mt-0.5 truncate">{notification.imageUrl ? '📷 Photo' : notification.texte}</p>
+            <p className="text-sm text-gray-600 mt-0.5 truncate">{notification.imageUrl ? (notification.texte ? `📷 ${notification.texte}` : '📷 Photo') : notification.texte}</p>
           </div>
           <button onClick={(e) => { e.stopPropagation(); setNotification(null) }} className="text-gray-300 hover:text-gray-500 text-lg leading-none flex-shrink-0">×</button>
         </div>
@@ -327,7 +351,7 @@ export default function ChatGroupe() {
         {messages.map((msg, index) => {
           const vuList = getVuList(msg)
           const vuCount = vuList.length
-          const msgPhotoURL = membres.find(m => m.nom === msg.nom)?.photoURL
+          const msgPhoto = msg.senderId ? getPhotoById(msg.senderId) : getPhotoByNom(msg.nom)
 
           return (
             <div key={msg.id}>
@@ -340,7 +364,7 @@ export default function ChatGroupe() {
               )}
 
               <div className={`flex items-start gap-3 ${isMyMessage(msg) ? 'flex-row-reverse' : ''}`}>
-                <Avatar nom={msg.nom} role={msg.role} photoURL={msgPhotoURL} size="md" />
+                <Avatar nom={msg.nom} role={msg.role} photoURL={msgPhoto} size="md" />
                 <div className={`max-w-xs lg:max-w-md ${isMyMessage(msg) ? 'items-end' : 'items-start'} flex flex-col`}>
                   <div className={`flex items-center gap-2 mb-1 ${isMyMessage(msg) ? 'flex-row-reverse' : ''}`}>
                     <span className="text-sm font-semibold text-gray-700">{msg.nom}</span>
@@ -354,12 +378,15 @@ export default function ChatGroupe() {
                       {emojiPickerId === msg.id && (
                         <div className={`absolute bottom-8 z-30 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 flex gap-1 ${isMyMessage(msg) ? 'right-0' : 'left-0'}`}
                           style={{ animation: 'emojiPop 0.15s ease' }} onClick={(e) => e.stopPropagation()}>
-                          {EMOJIS.map(emoji => (
-                            <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
-                              className={`text-xl hover:scale-125 transition rounded-xl p-1 ${msg.reactions?.[emoji]?.[userData?.nom] ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
-                              {emoji}
-                            </button>
-                          ))}
+                          {EMOJIS.map(emoji => {
+                            const hasReacted = msg.reactions?.[emoji]?.[userData?.nom]
+                            return (
+                              <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
+                                className={`text-xl hover:scale-125 transition rounded-xl p-1 ${hasReacted ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
+                                {emoji}
+                              </button>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
@@ -375,28 +402,40 @@ export default function ChatGroupe() {
                         </div>
                       ) : (
                         <>
+                          {/* ✅ Photo + texte dans la même bulle */}
                           <div className="relative">
-                            {msg.imageUrl ? (
-                              <div className={`rounded-2xl overflow-hidden shadow-sm ${isMyMessage(msg) ? 'rounded-tr-sm' : 'rounded-tl-sm'}`}>
-                                <img src={msg.imageUrl} alt="image" className="max-w-xs max-h-64 object-cover cursor-pointer hover:opacity-90 transition" onClick={() => window.open(msg.imageUrl, '_blank')} />
-                              </div>
-                            ) : (
-                              <div className={`px-4 py-2 rounded-2xl text-sm ${
-                                mentionsMe(msg) ? 'bg-yellow-50 border border-yellow-300 text-gray-800 rounded-tl-sm'
-                                : isMyMessage(msg) ? 'bg-blue-600 text-white rounded-tr-sm'
-                                : 'bg-white text-gray-800 shadow-sm rounded-tl-sm'
-                              }`}>
-                                <MessageText texte={msg.texte} />
-                                {msg.modifié && <span className="text-xs opacity-60 ml-1">(modifié)</span>}
-                              </div>
-                            )}
-                            {isMyMessage(msg) && !msg.imageUrl && (
+                            <div className={`rounded-2xl overflow-hidden shadow-sm ${isMyMessage(msg) ? 'rounded-tr-sm' : 'rounded-tl-sm'} ${
+                              mentionsMe(msg) ? 'bg-yellow-50 border border-yellow-300'
+                              : isMyMessage(msg) ? 'bg-blue-600'
+                              : 'bg-white'
+                            }`}>
+                              {msg.imageUrl && (
+                                <img src={msg.imageUrl} alt="image"
+                                  className="max-w-xs max-h-64 object-cover cursor-pointer hover:opacity-90 transition w-full"
+                                  onClick={() => window.open(msg.imageUrl, '_blank')} />
+                              )}
+                              {msg.texte ? (
+                                <div className={`px-4 py-2 text-sm ${
+                                  mentionsMe(msg) ? 'text-gray-800'
+                                  : isMyMessage(msg) ? 'text-white'
+                                  : 'text-gray-800'
+                                } ${msg.imageUrl ? 'border-t ' + (isMyMessage(msg) && !mentionsMe(msg) ? 'border-blue-500' : 'border-gray-100') : ''}`}>
+                                  <MessageText texte={msg.texte} />
+                                  {msg.modifié && <span className="text-xs opacity-60 ml-1">(modifié)</span>}
+                                </div>
+                              ) : !msg.imageUrl ? (
+                                <div className={`px-4 py-2 text-sm ${isMyMessage(msg) ? 'text-white' : 'text-gray-800'}`}>
+                                  {msg.modifié && <span className="text-xs opacity-60">(modifié)</span>}
+                                </div>
+                              ) : null}
+                            </div>
+                            {isMyMessage(msg) && (
                               <div className="absolute -left-8 top-1">
                                 <button onClick={(e) => { e.stopPropagation(); setMenuId(menuId === msg.id ? null : msg.id); setEmojiPickerId(null) }}
                                   className="opacity-0 group-hover:opacity-100 transition text-gray-400 hover:text-gray-600 text-sm">⋮</button>
                                 {menuId === msg.id && (
                                   <div className="absolute right-0 bottom-6 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10 min-w-28">
-                                    <button onClick={() => startEdit(msg)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">✏️ Modifier</button>
+                                    {!msg.imageUrl && <button onClick={() => startEdit(msg)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">✏️ Modifier</button>}
                                     {(userData?.role === 'directrice' || isSupOrEquivalent(userData?.role)) && (
                                       <button onClick={() => deleteMessage(msg.id)} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2">🗑️ Supprimer</button>
                                     )}
@@ -420,7 +459,9 @@ export default function ChatGroupe() {
                                       style={{ animation: 'reactionPop 0.15s ease' }}>
                                       <div className="text-base mb-1 text-center">{emoji}</div>
                                       <div className="space-y-0.5">
-                                        {names.map((name, i) => <div key={i} className="text-xs text-gray-200 whitespace-nowrap">{name === userData?.nom ? '✦ Vous' : name}</div>)}
+                                        {names.map((name, i) => (
+                                          <div key={i} className="text-xs text-gray-200 whitespace-nowrap">{name === userData?.nom ? '✦ Vous' : name}</div>
+                                        ))}
                                       </div>
                                       <div className={`absolute top-full ${isMyMessage(msg) ? 'right-3' : 'left-3'} w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900`}></div>
                                     </div>
@@ -471,17 +512,28 @@ export default function ChatGroupe() {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* ✅ Preview image avec champ commentaire intégré */}
       {selectedImage && (
-        <div className="bg-blue-50 border-t border-blue-200 px-6 py-3 flex items-center gap-3">
-          <img src={URL.createObjectURL(selectedImage)} alt="preview" className="h-16 w-16 object-cover rounded-lg" />
-          <div className="flex-1">
-            <div className="text-sm font-medium text-gray-800">{selectedImage.name || 'Image collée'}</div>
-            <div className="text-xs text-gray-400">{selectedImage.size ? (selectedImage.size / 1024).toFixed(1) + ' KB' : ''}</div>
+        <div className="bg-blue-50 border-t border-blue-200 px-6 py-3">
+          <div className="flex items-center gap-3 mb-2">
+            <img src={URL.createObjectURL(selectedImage)} alt="preview" className="h-16 w-16 object-cover rounded-lg flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-gray-800">{selectedImage.name || 'Image'}</div>
+              <div className="text-xs text-gray-400">{selectedImage.size ? (selectedImage.size / 1024).toFixed(1) + ' KB' : ''}</div>
+            </div>
+            <button onClick={() => { setSelectedImage(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
+              className="text-gray-400 hover:text-red-500 transition text-xl flex-shrink-0">×</button>
           </div>
-          <button onClick={() => { setSelectedImage(null); fileInputRef.current.value = '' }} className="text-gray-400 hover:text-red-500 transition text-xl">×</button>
-          <button onClick={() => sendImage(selectedImage)} disabled={uploading} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-50">
-            {uploading ? '⏳ Envoi...' : '📤 Envoyer'}
-          </button>
+          <div className="flex gap-2">
+            <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Ajouter un commentaire... (optionnel)"
+              onKeyDown={(e) => e.key === 'Enter' && sendImage(selectedImage)}
+              className="flex-1 px-3 py-2 border border-blue-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white" />
+            <button onClick={() => sendImage(selectedImage)} disabled={uploading}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-50 flex-shrink-0">
+              {uploading ? '⏳' : '📤 Envoyer'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -514,7 +566,10 @@ export default function ChatGroupe() {
             }}
             placeholder="Écrire un message... (@ pour mentionner, Ctrl+V pour image)"
             className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm" />
-          <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium text-sm transition disabled:opacity-50">Envoyer</button>
+          <button type="submit" disabled={!newMessage.trim() && !selectedImage}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium text-sm transition disabled:opacity-50">
+            Envoyer
+          </button>
         </form>
       </div>
     </div>
