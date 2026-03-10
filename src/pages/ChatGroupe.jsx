@@ -8,17 +8,25 @@ import { useNotification } from '../hooks/useNotification'
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '✅']
 const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].includes(role)
 
+function Avatar({ nom, role, photoURL, size = 'md', className = '' }) {
+  const sizes = { xs: 'w-6 h-6 text-xs', sm: 'w-8 h-8 text-xs', md: 'w-9 h-9 text-sm', lg: 'w-10 h-10 text-sm', xl: 'w-24 h-24 text-2xl' }
+  const colors = { directrice: 'bg-amber-500', vigie: 'bg-indigo-500', formateur: 'bg-teal-500', superviseure: 'bg-purple-600' }
+  const color = colors[role] || 'bg-blue-600'
+  const sizeClass = sizes[size] || sizes.md
+  const initials = nom ? nom.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) : '?'
+  if (photoURL) return <img src={photoURL} alt={nom} className={`${sizeClass} rounded-full object-cover flex-shrink-0 ${className}`} />
+  return <div className={`${sizeClass} rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${color} ${className}`}>{initials}</div>
+}
+
 function MessageText({ texte }) {
   if (!texte) return null
   const parts = texte.split(/(@\w[\w\s]*)/g)
   return (
     <>
       {parts.map((part, i) =>
-        part.startsWith('@') ? (
-          <span key={i} className="bg-blue-200 text-blue-800 rounded px-1 font-semibold">{part}</span>
-        ) : (
-          <span key={i}>{part}</span>
-        )
+        part.startsWith('@')
+          ? <span key={i} className="bg-blue-200 text-blue-800 rounded px-1 font-semibold">{part}</span>
+          : <span key={i}>{part}</span>
       )}
     </>
   )
@@ -53,16 +61,14 @@ export default function ChatGroupe() {
   const notifTimeout = useRef(null)
   const markedAsRead = useRef(new Set())
 
-  useEffect(() => {
-    if (user?.uid) requestPermission(user.uid)
-  }, [user?.uid])
+  useEffect(() => { if (user?.uid) requestPermission(user.uid) }, [user?.uid])
 
   useEffect(() => {
-    const usersRef = ref(db, 'users')
-    onValue(usersRef, (snap) => {
+    const unsubscribe = onValue(ref(db, 'users'), (snap) => {
       const data = snap.val()
       if (data) setMembres(Object.entries(data).map(([id, u]) => ({ id, ...u })))
     })
+    return () => unsubscribe()
   }, [])
 
   useEffect(() => {
@@ -71,8 +77,7 @@ export default function ChatGroupe() {
     lastMessageCount.current = 0
     markedAsRead.current = new Set()
 
-    const messagesRef = ref(db, 'chat_groupe')
-    const unsubscribe = onValue(messagesRef, (snapshot) => {
+    const unsubscribe = onValue(ref(db, 'chat_groupe'), (snapshot) => {
       const data = snapshot.val()
       if (data) {
         const messagesList = Object.entries(data).map(([id, msg]) => ({ id, ...msg }))
@@ -94,19 +99,9 @@ export default function ChatGroupe() {
               g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
               o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
             } catch (e) {}
-            sendNotification({
-              title: `💬 ${newMsg.nom}`,
-              body: newMsg.imageUrl ? '📷 Photo' : newMsg.texte,
-              icon: '/favicon.ico',
-              tag: `chat-groupe-${newMsg.nom}`
-            })
+            sendNotification({ title: `💬 ${newMsg.nom}`, body: newMsg.imageUrl ? '📷 Photo' : newMsg.texte, icon: '/favicon.ico', tag: `chat-groupe-${newMsg.nom}` })
             if (newMsg.texte?.includes(`@${userData?.nom}`)) {
-              sendNotification({
-                title: `🔔 ${newMsg.nom} vous a mentionné`,
-                body: newMsg.texte,
-                icon: '/favicon.ico',
-                tag: `mention-${newMsg.nom}`
-              })
+              sendNotification({ title: `🔔 ${newMsg.nom} vous a mentionné`, body: newMsg.texte, icon: '/favicon.ico', tag: `mention-${newMsg.nom}` })
             }
           }
         }
@@ -114,9 +109,7 @@ export default function ChatGroupe() {
         messagesList.forEach(msg => {
           if (msg.nom !== userData?.nom && !msg.vus?.[user.uid] && !markedAsRead.current.has(msg.id)) {
             markedAsRead.current.add(msg.id)
-            update(ref(db, `chat_groupe/${msg.id}/vus`), {
-              [user.uid]: { nom: userData?.nom, role: userData?.role, vu_le: Date.now() }
-            })
+            update(ref(db, `chat_groupe/${msg.id}/vus`), { [user.uid]: { nom: userData?.nom, role: userData?.role, vu_le: Date.now() } })
           }
         })
 
@@ -128,19 +121,13 @@ export default function ChatGroupe() {
         isInitialLoad.current = false
       }
     })
-
     return () => { unsubscribe(); if (notifTimeout.current) clearTimeout(notifTimeout.current) }
   }, [userData?.nom, user?.uid])
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   useEffect(() => {
-    const handleClick = () => {
-      setMenuId(null); setEmojiPickerId(null); setShowMentions(false)
-      setReactionPopup(null); setVuPopupId(null)
-    }
+    const handleClick = () => { setMenuId(null); setEmojiPickerId(null); setShowMentions(false); setReactionPopup(null); setVuPopupId(null) }
     document.addEventListener('click', handleClick)
     return () => document.removeEventListener('click', handleClick)
   }, [])
@@ -165,17 +152,14 @@ export default function ChatGroupe() {
   const handleInputChange = (e) => {
     const val = e.target.value
     const pos = e.target.selectionStart
-    setNewMessage(val)
-    setCursorPos(pos)
+    setNewMessage(val); setCursorPos(pos)
     const textBeforeCursor = val.slice(0, pos)
     const atIndex = textBeforeCursor.lastIndexOf('@')
     if (atIndex !== -1) {
       const query = textBeforeCursor.slice(atIndex + 1)
       if (!query.includes(' ') || query.length === 0) {
         const filtered = membres.filter(m => m.id !== user.uid && m.nom.toLowerCase().includes(query.toLowerCase()))
-        setMentionSuggestions(filtered)
-        setShowMentions(filtered.length > 0)
-        return
+        setMentionSuggestions(filtered); setShowMentions(filtered.length > 0); return
       }
     }
     setShowMentions(false)
@@ -207,12 +191,7 @@ export default function ChatGroupe() {
   const getReactionSummary = (reactions) => {
     if (!reactions) return []
     return Object.entries(reactions)
-      .map(([emoji, users]) => ({
-        emoji,
-        count: Object.values(users).filter(Boolean).length,
-        hasReacted: !!users[userData?.nom],
-        names: Object.entries(users).filter(([, v]) => v).map(([name]) => name)
-      }))
+      .map(([emoji, users]) => ({ emoji, count: Object.values(users).filter(Boolean).length, hasReacted: !!users[userData?.nom], names: Object.entries(users).filter(([, v]) => v).map(([name]) => name) }))
       .filter(r => r.count > 0)
   }
 
@@ -230,8 +209,7 @@ export default function ChatGroupe() {
       timestamp: serverTimestamp(),
       vus: { [user.uid]: { nom: userData?.nom, role: userData?.role, vu_le: Date.now() } }
     })
-    setNewMessage('')
-    setUnreadCount(0)
+    setNewMessage(''); setUnreadCount(0)
   }
 
   const sendImage = async (file) => {
@@ -275,10 +253,7 @@ export default function ChatGroupe() {
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ` ${time}`
   }
 
-  const formatVuTime = (ts) => {
-    if (!ts) return ''
-    return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-  }
+  const formatVuTime = (ts) => ts ? new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''
 
   const shouldShowDateSeparator = (msg, index) => {
     if (index === 0) return true
@@ -296,35 +271,23 @@ export default function ChatGroupe() {
     return date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
   }
 
-  const getRoleColor = (role) => {
-    if (role === 'directrice') return 'text-amber-600'
-    if (isSupOrEquivalent(role)) return 'text-purple-600'
-    return 'text-blue-600'
-  }
-  const getAvatarColor = (role) => {
-    if (role === 'directrice') return 'bg-amber-500'
-    if (role === 'vigie') return 'bg-indigo-500'
-    if (role === 'formateur') return 'bg-teal-500'
-    if (isSupOrEquivalent(role)) return 'bg-purple-600'
-    return 'bg-blue-600'
-  }
-  // ✅ Affiche le titre personnalisé si disponible
+  const getRoleColor = (role) => ({ directrice: 'text-amber-600', superviseure: 'text-purple-600', vigie: 'text-indigo-600', formateur: 'text-teal-600' }[role] || 'text-blue-600')
   const getRoleLabel = (role, titre) => {
     if (titre) return titre
-    switch (role) {
-      case 'directrice': return 'Directrice'
-      case 'superviseure': return 'Superviseure'
-      case 'vigie': return 'Vigie'
-      case 'formateur': return 'Formateur'
-      default: return 'Agent'
-    }
+    return { directrice: 'Directrice', superviseure: 'Superviseure', vigie: 'Vigie', formateur: 'Formateur' }[role] || 'Agent'
   }
-  const getInitials = (name) => { if (!name) return '?'; return name.split(' ').map(w => w[0]).join('').toUpperCase() }
   const isMyMessage = (msg) => msg.nom === userData?.nom
   const mentionsMe = (msg) => msg.texte?.includes(`@${userData?.nom}`)
 
   return (
     <div className="flex flex-col h-screen relative">
+      <style>{`
+        @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes emojiPop { from { opacity: 0; transform: scale(0.7) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes mentionPop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes reactionPop { from { opacity: 0; transform: scale(0.9) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes vuPop { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
 
       <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm flex items-center justify-between">
         <div>
@@ -344,9 +307,7 @@ export default function ChatGroupe() {
         <div className="absolute top-20 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-start gap-3 cursor-pointer hover:shadow-2xl transition"
           style={{ maxWidth: '300px', animation: 'slideIn 0.3s ease' }}
           onClick={() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); setNotification(null); setUnreadCount(0) }}>
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 ${getAvatarColor(notification.role)}`}>
-            {getInitials(notification.nom)}
-          </div>
+          <Avatar nom={notification.nom} role={notification.role} photoURL={membres.find(m => m.nom === notification.nom)?.photoURL} size="lg" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-bold text-gray-800 truncate">{notification.nom}</span>
@@ -358,14 +319,6 @@ export default function ChatGroupe() {
         </div>
       )}
 
-      <style>{`
-        @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes emojiPop { from { opacity: 0; transform: scale(0.7) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-        @keyframes mentionPop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes reactionPop { from { opacity: 0; transform: scale(0.9) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-        @keyframes vuPop { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-      `}</style>
-
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-gray-50" onScroll={handleScroll}>
         {messages.length === 0 && (
           <div className="text-center text-gray-400 mt-20"><div className="text-4xl mb-2">💬</div><p>Aucun message pour l'instant</p></div>
@@ -374,6 +327,7 @@ export default function ChatGroupe() {
         {messages.map((msg, index) => {
           const vuList = getVuList(msg)
           const vuCount = vuList.length
+          const msgPhotoURL = membres.find(m => m.nom === msg.nom)?.photoURL
 
           return (
             <div key={msg.id}>
@@ -386,13 +340,10 @@ export default function ChatGroupe() {
               )}
 
               <div className={`flex items-start gap-3 ${isMyMessage(msg) ? 'flex-row-reverse' : ''}`}>
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 ${getAvatarColor(msg.role)}`}>
-                  {getInitials(msg.nom)}
-                </div>
+                <Avatar nom={msg.nom} role={msg.role} photoURL={msgPhotoURL} size="md" />
                 <div className={`max-w-xs lg:max-w-md ${isMyMessage(msg) ? 'items-end' : 'items-start'} flex flex-col`}>
                   <div className={`flex items-center gap-2 mb-1 ${isMyMessage(msg) ? 'flex-row-reverse' : ''}`}>
                     <span className="text-sm font-semibold text-gray-700">{msg.nom}</span>
-                    {/* ✅ Affiche le titre personnalisé si disponible */}
                     <span className={`text-xs font-medium ${getRoleColor(msg.role)}`}>{getRoleLabel(msg.role, msg.titre)}</span>
                   </div>
 
@@ -403,15 +354,12 @@ export default function ChatGroupe() {
                       {emojiPickerId === msg.id && (
                         <div className={`absolute bottom-8 z-30 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 flex gap-1 ${isMyMessage(msg) ? 'right-0' : 'left-0'}`}
                           style={{ animation: 'emojiPop 0.15s ease' }} onClick={(e) => e.stopPropagation()}>
-                          {EMOJIS.map(emoji => {
-                            const hasReacted = msg.reactions?.[emoji]?.[userData?.nom]
-                            return (
-                              <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
-                                className={`text-xl hover:scale-125 transition rounded-xl p-1 ${hasReacted ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
-                                {emoji}
-                              </button>
-                            )
-                          })}
+                          {EMOJIS.map(emoji => (
+                            <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
+                              className={`text-xl hover:scale-125 transition rounded-xl p-1 ${msg.reactions?.[emoji]?.[userData?.nom] ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
+                              {emoji}
+                            </button>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -472,9 +420,7 @@ export default function ChatGroupe() {
                                       style={{ animation: 'reactionPop 0.15s ease' }}>
                                       <div className="text-base mb-1 text-center">{emoji}</div>
                                       <div className="space-y-0.5">
-                                        {names.map((name, i) => (
-                                          <div key={i} className="text-xs text-gray-200 whitespace-nowrap">{name === userData?.nom ? '✦ Vous' : name}</div>
-                                        ))}
+                                        {names.map((name, i) => <div key={i} className="text-xs text-gray-200 whitespace-nowrap">{name === userData?.nom ? '✦ Vous' : name}</div>)}
                                       </div>
                                       <div className={`absolute top-full ${isMyMessage(msg) ? 'right-3' : 'left-3'} w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900`}></div>
                                     </div>
@@ -504,9 +450,7 @@ export default function ChatGroupe() {
                               {vuList.map((v, i) => (
                                 <div key={i} className="flex items-center justify-between gap-3">
                                   <div className="flex items-center gap-2">
-                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${getAvatarColor(v.role)}`}>
-                                      {getInitials(v.nom)}
-                                    </div>
+                                    <Avatar nom={v.nom} role={v.role} photoURL={membres.find(m => m.nom === v.nom)?.photoURL} size="xs" />
                                     <span className="text-xs text-white whitespace-nowrap">{v.nom === userData?.nom ? 'Vous' : v.nom}</span>
                                   </div>
                                   <span className="text-xs text-gray-400 whitespace-nowrap">{formatVuTime(v.vu_le)}</span>
@@ -551,9 +495,7 @@ export default function ChatGroupe() {
             {mentionSuggestions.map(membre => (
               <button key={membre.id} onClick={() => insertMention(membre)}
                 className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 transition text-left">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${getAvatarColor(membre.role)}`}>
-                  {getInitials(membre.nom)}
-                </div>
+                <Avatar nom={membre.nom} role={membre.role} photoURL={membre.photoURL} size="sm" />
                 <div>
                   <div className="text-sm font-semibold text-gray-800">{membre.nom}</div>
                   <div className={`text-xs ${getRoleColor(membre.role)}`}>{getRoleLabel(membre.role, membre.titre)}</div>
@@ -572,9 +514,7 @@ export default function ChatGroupe() {
             }}
             placeholder="Écrire un message... (@ pour mentionner, Ctrl+V pour image)"
             className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-sm" />
-          <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium text-sm transition disabled:opacity-50">
-            Envoyer
-          </button>
+          <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium text-sm transition disabled:opacity-50">Envoyer</button>
         </form>
       </div>
     </div>

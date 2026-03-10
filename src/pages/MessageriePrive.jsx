@@ -9,6 +9,16 @@ import { usePresence } from '../hooks/usePresence'
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '✅']
 const isSupOrEquivalent = (role) => ['superviseure', 'vigie', 'formateur'].includes(role)
 
+function Avatar({ nom, role, photoURL, size = 'md', className = '' }) {
+  const sizes = { xs: 'w-6 h-6 text-xs', sm: 'w-8 h-8 text-xs', md: 'w-9 h-9 text-sm', lg: 'w-10 h-10 text-sm', xl: 'w-24 h-24 text-2xl' }
+  const colors = { directrice: 'bg-amber-500', vigie: 'bg-indigo-500', formateur: 'bg-teal-500', superviseure: 'bg-purple-600' }
+  const color = colors[role] || 'bg-blue-600'
+  const sizeClass = sizes[size] || sizes.md
+  const initials = nom ? nom.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) : '?'
+  if (photoURL) return <img src={photoURL} alt={nom} className={`${sizeClass} rounded-full object-cover flex-shrink-0 ${className}`} />
+  return <div className={`${sizeClass} rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${color} ${className}`}>{initials}</div>
+}
+
 export default function MessageriePrive({ initialMembre = null }) {
   const { user, userData } = useAuth()
   const { requestPermission, sendNotification } = useNotification()
@@ -36,17 +46,11 @@ export default function MessageriePrive({ initialMembre = null }) {
 
   const getConvId = (uid1, uid2) => [uid1, uid2].sort().join('_')
 
-  useEffect(() => {
-    if (user?.uid) requestPermission(user.uid)
-  }, [user?.uid])
+  useEffect(() => { if (user?.uid) requestPermission(user.uid) }, [user?.uid])
+  useEffect(() => { if (initialMembre) setSelectedMembre(initialMembre) }, [initialMembre?.id])
 
   useEffect(() => {
-    if (initialMembre) setSelectedMembre(initialMembre)
-  }, [initialMembre?.id])
-
-  useEffect(() => {
-    const usersRef = ref(db, 'users')
-    const unsubscribe = onValue(usersRef, (snapshot) => {
+    const unsubscribe = onValue(ref(db, 'users'), (snapshot) => {
       const data = snapshot.val()
       if (data) {
         const list = Object.entries(data).map(([id, u]) => ({ id, ...u })).filter(u => u.id !== user.uid)
@@ -60,9 +64,8 @@ export default function MessageriePrive({ initialMembre = null }) {
     if (membres.length === 0 || !user.uid) return
     const unsubscribes = membres.map(membre => {
       const convId = getConvId(user.uid, membre.id)
-      const convRef = ref(db, `messages_prives/${convId}`)
       let isFirst = true
-      return onValue(convRef, (snapshot) => {
+      return onValue(ref(db, `messages_prives/${convId}`), (snapshot) => {
         const data = snapshot.val()
         if (data) {
           const list = Object.entries(data).map(([id, msg]) => ({ id, ...msg }))
@@ -71,7 +74,7 @@ export default function MessageriePrive({ initialMembre = null }) {
           if (!isFirst && lastMsg && lastMsg.senderId !== user.uid && lastMsg.timestamp) {
             const prevTimestamp = lastMsgTimestamps.current[membre.id] || 0
             if (lastMsg.timestamp > prevTimestamp) {
-              setNotification({ ...lastMsg, senderNom: lastMsg.senderNom || membre.nom, senderRole: lastMsg.senderRole || membre.role, senderTitre: lastMsg.senderTitre || membre.titre })
+              setNotification({ ...lastMsg, senderNom: lastMsg.senderNom || membre.nom, senderRole: lastMsg.senderRole || membre.role, senderTitre: lastMsg.senderTitre || membre.titre, senderPhotoURL: membre.photoURL || null })
               if (notifTimeout.current) clearTimeout(notifTimeout.current)
               notifTimeout.current = setTimeout(() => setNotification(null), 5000)
               try {
@@ -83,12 +86,7 @@ export default function MessageriePrive({ initialMembre = null }) {
                 g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
                 o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3)
               } catch (e) {}
-              sendNotification({
-                title: `✉️ Message privé de ${lastMsg.senderNom || membre.nom}`,
-                body: lastMsg.imageUrl ? '📷 Photo' : lastMsg.texte,
-                icon: '/favicon.ico',
-                tag: `msg-prive-${lastMsg.senderId}`,
-              })
+              sendNotification({ title: `✉️ Message privé de ${lastMsg.senderNom || membre.nom}`, body: lastMsg.imageUrl ? '📷 Photo' : lastMsg.texte, icon: '/favicon.ico', tag: `msg-prive-${lastMsg.senderId}` })
             }
           }
           if (lastMsg?.timestamp) lastMsgTimestamps.current[membre.id] = lastMsg.timestamp
@@ -110,8 +108,7 @@ export default function MessageriePrive({ initialMembre = null }) {
   useEffect(() => {
     if (!selectedMembre) return
     const convId = getConvId(user.uid, selectedMembre.id)
-    const messagesRef = ref(db, `messages_prives/${convId}`)
-    const unsubscribe = onValue(messagesRef, (snapshot) => {
+    const unsubscribe = onValue(ref(db, `messages_prives/${convId}`), (snapshot) => {
       const data = snapshot.val()
       if (data) {
         const list = Object.entries(data).map(([id, msg]) => ({ id, ...msg }))
@@ -129,9 +126,7 @@ export default function MessageriePrive({ initialMembre = null }) {
     return () => unsubscribe()
   }, [selectedMembre, user.uid])
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   useEffect(() => {
     const handleClick = () => { setMenuId(null); setEmojiPickerId(null); setVuTooltipId(null) }
@@ -153,12 +148,8 @@ export default function MessageriePrive({ initialMembre = null }) {
   }, [selectedMembre])
 
   const isReadByOther = (msg) => {
-    if (msg.senderId !== user.uid) return false
-    if (!msg.readBy) return false
-    return Object.entries(msg.readBy).some(([uid, val]) => {
-      if (uid === user.uid) return false
-      return val?.lu === true || val === true
-    })
+    if (msg.senderId !== user.uid || !msg.readBy) return false
+    return Object.entries(msg.readBy).some(([uid, val]) => uid !== user.uid && (val?.lu === true || val === true))
   }
 
   const getReadTime = (msg) => {
@@ -175,21 +166,13 @@ export default function MessageriePrive({ initialMembre = null }) {
     const convId = getConvId(user.uid, selectedMembre.id)
     const msg = messages.find(m => m.id === msgId)
     const alreadyReacted = msg?.reactions?.[emoji]?.[userData?.nom]
-    await update(ref(db, `messages_prives/${convId}/${msgId}/reactions/${emoji}`), {
-      [userData?.nom]: alreadyReacted ? null : true
-    })
+    await update(ref(db, `messages_prives/${convId}/${msgId}/reactions/${emoji}`), { [userData?.nom]: alreadyReacted ? null : true })
     setEmojiPickerId(null)
   }
 
   const getReactionSummary = (reactions) => {
     if (!reactions) return []
-    return Object.entries(reactions)
-      .map(([emoji, users]) => ({
-        emoji,
-        count: Object.values(users).filter(Boolean).length,
-        hasReacted: !!users[userData?.nom]
-      }))
-      .filter(r => r.count > 0)
+    return Object.entries(reactions).map(([emoji, users]) => ({ emoji, count: Object.values(users).filter(Boolean).length, hasReacted: !!users[userData?.nom] })).filter(r => r.count > 0)
   }
 
   const canSendMessage = (targetRole) => {
@@ -204,9 +187,8 @@ export default function MessageriePrive({ initialMembre = null }) {
     if (!newMessage.trim() || !selectedMembre) return
     const convId = getConvId(user.uid, selectedMembre.id)
     await push(ref(db, `messages_prives/${convId}`), {
-      texte: newMessage.trim(),
-      senderId: user.uid, senderNom: userData?.nom, senderRole: userData?.role,
-      senderTitre: userData?.titre || null,
+      texte: newMessage.trim(), senderId: user.uid, senderNom: userData?.nom,
+      senderRole: userData?.role, senderTitre: userData?.titre || null,
       timestamp: serverTimestamp(),
       readBy: { [user.uid]: { lu: true, lu_le: Date.now(), nom: userData?.nom } }
     })
@@ -222,15 +204,13 @@ export default function MessageriePrive({ initialMembre = null }) {
       const url = await getDownloadURL(fileRef)
       const convId = getConvId(user.uid, selectedMembre.id)
       await push(ref(db, `messages_prives/${convId}`), {
-        texte: '', imageUrl: url,
-        senderId: user.uid, senderNom: userData?.nom, senderRole: userData?.role,
-        senderTitre: userData?.titre || null,
+        texte: '', imageUrl: url, senderId: user.uid, senderNom: userData?.nom,
+        senderRole: userData?.role, senderTitre: userData?.titre || null,
         timestamp: serverTimestamp(),
         readBy: { [user.uid]: { lu: true, lu_le: Date.now(), nom: userData?.nom } }
       })
     } catch (err) { console.error('Erreur upload:', err) }
-    setUploading(false)
-    setSelectedImage(null)
+    setUploading(false); setSelectedImage(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -247,40 +227,17 @@ export default function MessageriePrive({ initialMembre = null }) {
   const deleteMessage = async (msgId) => {
     if (!window.confirm('Supprimer ce message ?')) return
     const convId = getConvId(user.uid, selectedMembre.id)
-    await remove(ref(db, `messages_prives/${convId}/${msgId}`))
-    setMenuId(null)
+    await remove(ref(db, `messages_prives/${convId}/${msgId}`)); setMenuId(null)
   }
 
-  const getAvatarColor = (role) => {
-    if (role === 'directrice') return 'bg-amber-500'
-    if (role === 'vigie') return 'bg-indigo-500'
-    if (role === 'formateur') return 'bg-teal-500'
-    if (isSupOrEquivalent(role)) return 'bg-purple-600'
-    return 'bg-blue-600'
-  }
-  const getRoleColor = (role) => {
-    if (role === 'directrice') return 'text-amber-600'
-    if (role === 'vigie') return 'text-indigo-600'
-    if (role === 'formateur') return 'text-teal-600'
-    if (isSupOrEquivalent(role)) return 'text-purple-600'
-    return 'text-blue-600'
-  }
-  // ✅ Affiche le titre personnalisé si disponible
+  const getRoleColor = (role) => ({ directrice: 'text-amber-600', vigie: 'text-indigo-600', formateur: 'text-teal-600', superviseure: 'text-purple-600' }[role] || 'text-blue-600')
   const getRoleLabel = (role, titre) => {
     if (titre) return titre
-    switch (role) {
-      case 'directrice':   return 'Directrice'
-      case 'superviseure': return 'Superviseure'
-      case 'vigie':        return 'Vigie'
-      case 'formateur':    return 'Formateur'
-      default:             return 'Agent'
-    }
+    return { directrice: 'Directrice', superviseure: 'Superviseure', vigie: 'Vigie', formateur: 'Formateur' }[role] || 'Agent'
   }
-  const getInitials = (name) => { if (!name) return '?'; return name.split(' ').map(w => w[0]).join('').toUpperCase() }
   const formatTime = (timestamp) => {
     if (!timestamp) return ''
-    const date = new Date(timestamp)
-    const now = new Date()
+    const date = new Date(timestamp); const now = new Date()
     if (now - date < 86400000) return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   }
@@ -296,9 +253,7 @@ export default function MessageriePrive({ initialMembre = null }) {
       const aTime = lastMessages[a.id]?.timestamp || 0
       const bTime = lastMessages[b.id]?.timestamp || 0
       if (bTime !== aTime) return bTime - aTime
-      const aOnline = isOnline(a.id) ? 1 : 0
-      const bOnline = isOnline(b.id) ? 1 : 0
-      return bOnline - aOnline
+      return (isOnline(b.id) ? 1 : 0) - (isOnline(a.id) ? 1 : 0)
     })
 
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
@@ -316,9 +271,7 @@ export default function MessageriePrive({ initialMembre = null }) {
         <div className="absolute top-4 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-start gap-3 cursor-pointer hover:shadow-2xl transition"
           style={{ maxWidth: '300px', animation: 'slideIn 0.3s ease' }}
           onClick={() => { const membre = membres.find(m => m.id === notification.senderId); if (membre) setSelectedMembre(membre); setNotification(null) }}>
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 ${getAvatarColor(notification.senderRole)}`}>
-            {getInitials(notification.senderNom)}
-          </div>
+          <Avatar nom={notification.senderNom} role={notification.senderRole} photoURL={notification.senderPhotoURL} size="lg" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-bold text-gray-800 truncate">{notification.senderNom}</span>
@@ -342,40 +295,28 @@ export default function MessageriePrive({ initialMembre = null }) {
                 {onlineCount > 0 && <span className="ml-2 text-green-500 font-medium">• {onlineCount} en ligne</span>}
               </p>
             </div>
-            {totalUnread > 0 && (
-              <span className="bg-red-500 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">{totalUnread}</span>
-            )}
+            {totalUnread > 0 && <span className="bg-red-500 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">{totalUnread}</span>}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {membresFiltrés.length === 0 && (
-            <div className="text-center text-gray-400 p-6 text-sm">Aucun membre disponible</div>
-          )}
+          {membresFiltrés.length === 0 && <div className="text-center text-gray-400 p-6 text-sm">Aucun membre disponible</div>}
           {membresFiltrés.map(membre => (
             <button key={membre.id} onClick={() => setSelectedMembre(membre)}
               className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition border-b border-gray-100 ${selectedMembre?.id === membre.id ? 'bg-blue-50' : ''}`}>
               <div className="relative flex-shrink-0">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ${getAvatarColor(membre.role)}`}>
-                  {getInitials(membre.nom)}
-                </div>
+                <Avatar nom={membre.nom} role={membre.role} photoURL={membre.photoURL} size="lg" />
                 <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${isOnline(membre.id) ? 'bg-green-400' : 'bg-gray-300'}`} />
                 {unreadCounts[membre.id] > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                    {unreadCounts[membre.id]}
-                  </span>
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">{unreadCounts[membre.id]}</span>
                 )}
               </div>
               <div className="text-left flex-1 min-w-0">
                 <div className="flex items-center justify-between">
                   <div className={`text-sm font-semibold truncate ${unreadCounts[membre.id] > 0 ? 'text-gray-900' : 'text-gray-800'}`}>{membre.nom}</div>
-                  {lastMessages[membre.id] && (
-                    <div className="text-xs text-gray-400 flex-shrink-0 ml-1">{formatTime(lastMessages[membre.id]?.timestamp)}</div>
-                  )}
+                  {lastMessages[membre.id] && <div className="text-xs text-gray-400 flex-shrink-0 ml-1">{formatTime(lastMessages[membre.id]?.timestamp)}</div>}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-xs font-medium flex-shrink-0 ${isOnline(membre.id) ? 'text-green-500' : 'text-gray-400'}`}>
-                    {isOnline(membre.id) ? 'En ligne' : 'Hors ligne'}
-                  </span>
+                  <span className={`text-xs font-medium flex-shrink-0 ${isOnline(membre.id) ? 'text-green-500' : 'text-gray-400'}`}>{isOnline(membre.id) ? 'En ligne' : 'Hors ligne'}</span>
                   {lastMessages[membre.id] && (
                     <>
                       <span className="text-gray-300 text-xs">·</span>
@@ -407,39 +348,31 @@ export default function MessageriePrive({ initialMembre = null }) {
           <>
             <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3">
               <div className="relative">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ${getAvatarColor(selectedMembre.role)}`}>
-                  {getInitials(selectedMembre.nom)}
-                </div>
+                <Avatar nom={selectedMembre.nom} role={selectedMembre.role} photoURL={selectedMembre.photoURL} size="lg" />
                 <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${isOnline(selectedMembre.id) ? 'bg-green-400' : 'bg-gray-300'}`} />
               </div>
               <div>
                 <div className="font-bold text-gray-800">{selectedMembre.nom}</div>
                 <div className="flex items-center gap-2">
-                  {/* ✅ Affiche le titre personnalisé si disponible */}
                   <span className={`text-xs font-medium ${getRoleColor(selectedMembre.role)}`}>{getRoleLabel(selectedMembre.role, selectedMembre.titre)}</span>
                   <span className="text-gray-300">·</span>
-                  <span className={`text-xs font-medium ${isOnline(selectedMembre.id) ? 'text-green-500' : 'text-gray-400'}`}>
-                    {isOnline(selectedMembre.id) ? '🟢 En ligne' : '⚫ Hors ligne'}
-                  </span>
+                  <span className={`text-xs font-medium ${isOnline(selectedMembre.id) ? 'text-green-500' : 'text-gray-400'}`}>{isOnline(selectedMembre.id) ? '🟢 En ligne' : '⚫ Hors ligne'}</span>
                 </div>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-gray-50">
               {messages.length === 0 && (
-                <div className="text-center text-gray-400 mt-20">
-                  <p>Aucun message</p><p className="text-sm">Démarrez la conversation !</p>
-                </div>
+                <div className="text-center text-gray-400 mt-20"><p>Aucun message</p><p className="text-sm">Démarrez la conversation !</p></div>
               )}
               {messages.map(msg => {
                 const read = isReadByOther(msg)
                 const readTime = getReadTime(msg)
                 const isMe = msg.senderId === user.uid
+                const senderPhotoURL = isMe ? userData?.photoURL : membres.find(m => m.id === msg.senderId)?.photoURL
                 return (
                   <div key={msg.id} className={`flex items-start gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${getAvatarColor(msg.senderRole)}`}>
-                      {getInitials(msg.senderNom)}
-                    </div>
+                    <Avatar nom={msg.senderNom} role={msg.senderRole} photoURL={senderPhotoURL} size="md" />
                     <div className={`max-w-xs lg:max-w-md flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                       <div className={`relative group flex items-end gap-1 ${isMe ? 'flex-row-reverse' : ''}`}>
                         <div className="relative">
@@ -448,15 +381,12 @@ export default function MessageriePrive({ initialMembre = null }) {
                           {emojiPickerId === msg.id && (
                             <div className={`absolute bottom-8 z-30 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 flex gap-1 ${isMe ? 'right-0' : 'left-0'}`}
                               style={{ animation: 'emojiPop 0.15s ease' }} onClick={(e) => e.stopPropagation()}>
-                              {EMOJIS.map(emoji => {
-                                const hasReacted = msg.reactions?.[emoji]?.[userData?.nom]
-                                return (
-                                  <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
-                                    className={`text-xl hover:scale-125 transition rounded-xl p-1 ${hasReacted ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
-                                    {emoji}
-                                  </button>
-                                )
-                              })}
+                              {EMOJIS.map(emoji => (
+                                <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
+                                  className={`text-xl hover:scale-125 transition rounded-xl p-1 ${msg.reactions?.[emoji]?.[userData?.nom] ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
+                                  {emoji}
+                                </button>
+                              ))}
                             </div>
                           )}
                         </div>
@@ -520,21 +450,14 @@ export default function MessageriePrive({ initialMembre = null }) {
                               {read ? '✓✓' : '✓'}
                             </button>
                             {vuTooltipId === msg.id && (
-                              <div className="absolute bottom-full right-0 mb-1 z-50 bg-gray-900 text-white rounded-xl px-3 py-2 text-xs whitespace-nowrap"
-                                style={{ animation: 'vuPop 0.15s ease' }}>
+                              <div className="absolute bottom-full right-0 mb-1 z-50 bg-gray-900 text-white rounded-xl px-3 py-2 text-xs whitespace-nowrap" style={{ animation: 'vuPop 0.15s ease' }}>
                                 {read ? (
                                   <>
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-blue-400">✓✓</span>
-                                      <span>Vu par <strong>{selectedMembre?.nom}</strong></span>
-                                    </div>
+                                    <div className="flex items-center gap-1.5"><span className="text-blue-400">✓✓</span><span>Vu par <strong>{selectedMembre?.nom}</strong></span></div>
                                     {readTime && <div className="text-gray-400 mt-0.5">à {readTime}</div>}
                                   </>
                                 ) : (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-gray-400">✓</span>
-                                    <span>Envoyé, pas encore lu</span>
-                                  </div>
+                                  <div className="flex items-center gap-1.5"><span className="text-gray-400">✓</span><span>Envoyé, pas encore lu</span></div>
                                 )}
                                 <div className="absolute top-full right-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900"></div>
                               </div>
